@@ -12,7 +12,7 @@ Schematics to be found on http://updates.keyboardpartner.de/Files/index.php?dir=
 
 TODO: Update XB2/XB5 scan driver to new framework.
 
-Version Info:
+**Version Info:**
 * 27.01.2025 #51 Neues universelles Framework mit *includes*, gemeinsam für alle HX3 Scan Driver
 * 10.12.2025 #49 Support für neues FPGA mit separatem (dritten) SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft
 * 11.07.2025 #47 Neue Organisation der Tastenabfrage mit vertauschter Spalte/Reihe (4017/4024-Zähler) bei Fatar, deutlich schneller
