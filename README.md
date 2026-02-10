@@ -26,4 +26,4 @@ TODO: Update XB2/XB5 scan driver to new framework.
 * 18.05.2021 #36 Andere Noise-Berechnung
 * 12.01.2021 #33 Bug in ResetDynTimers behoben
 
-C. Meyer 11/2010..02/2026
+C. Meyer 11/2010 - 02/2026
