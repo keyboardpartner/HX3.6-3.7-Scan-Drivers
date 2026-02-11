@@ -8,6 +8,7 @@ if exist %~n1.psm (
   copy %~n1.fmt %~n1.psm
   copy midi_io.fmt midi_io.psm
   del *.fmt
+  del *.log
   del *.hex
 ) else (
   echo #########################################
