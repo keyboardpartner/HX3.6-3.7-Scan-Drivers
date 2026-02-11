@@ -4,5 +4,19 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {},
+
+  "VsCodeTaskButtons.showCounter": true,
+  "VsCodeTaskButtons.tasks": [
+    {
+      "label": "$(play) Run",
+      "task": "run",
+      "tooltip": "Start the application"
+    },
+    {
+      "label": "$(beaker) Test",
+      "task": "test",
+      "tooltip": "Run tests"
+    }
+  ]
 }

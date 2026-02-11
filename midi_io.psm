@@ -14,7 +14,7 @@
                         ; Dispatcher stellt fest, ob und was es zu tun gibt
                         ; wird regelmäßig aus Hauptschleife aufgerufen
                         ;
-     midi_rx_writedata:
+     midi_rx_writedata: 
                         ; Notenwert und Dynamik abspeichern
                         ; Dynamik ist 0 bei Key-Off-Befehl
                         FETCH s0, s_midi_data1                           ; MIDI-Transponierung
@@ -60,7 +60,7 @@
                         LOAD s6_idx_ptr, s9_manual_select                ; 0 oder 1
                         ADD s6_idx_ptr, c_strobe_mask
                         OUTPUT s0, (s6_idx_ptr)                          ; Upper, Lower oder Pedal Strobe
-                        RETURN
+                        RETURN 
                         ;
                         ;
                         ; ##############################################################################
@@ -80,8 +80,8 @@
                         ; für MIDI ONLY und FATAR
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-         midi_rx_check:
-  midi_rx_check_loop_1:
+         midi_rx_check: 
+  midi_rx_check_loop_1: 
                         INPUT s0, MIDI_IN1_STATUS
                         COMPARE s0, 00                                   ; Daten empfangen?
                         JUMP Z, midi_rx_check_loop_2                     ; wenn nein, weiter mit MIDI In 2 (SAM/USB)
@@ -91,7 +91,7 @@
                         CALL NZ, midi_rx_decode_1                        ; interpretieren, falls komplett
                         JUMP midi_rx_check_loop_1
                         ;
-  midi_rx_check_loop_2:
+  midi_rx_check_loop_2: 
                         INPUT s0, MIDI_IN2_STATUS
                         COMPARE s0, 00                                   ; Daten empfangen?
                         JUMP Z, midi_rx_check_loop_sam                   ; wenn nein, weiter mit MIDI In 3 (AVR)
@@ -101,7 +101,7 @@
                         CALL NZ, midi_rx_decode_2                        ; interpretieren, falls komplett
                         JUMP midi_rx_check_loop_2
                         ;
-midi_rx_check_loop_sam:
+midi_rx_check_loop_sam: 
                         FETCH s0, s_midi_sam_has_fifo                    ; eigener FIFO im FPGA für SAM MIDI IN?
                         TEST s0, 01                                      ; Feature-Flag, 01 bei neuem FPGA
                         JUMP Z, midi_rx_check_loop_avr                   ; skip wenn 00 = nicht vorhanden
@@ -116,7 +116,7 @@ midi_rx_check_loop_sam:
                         CALL NZ, midi_rx_decode_sam                      ; interpretieren, falls komplett
                         JUMP midi_rx_check_loop_sam
                         ;
-midi_rx_check_loop_avr:
+midi_rx_check_loop_avr: 
                         INPUT s0, MIDI_AVR_STATUS
                         AND s0, 0E                                       ; Daten empfangen?
                         RETURN Z                                         ; wenn nein, zur�ck zur Main Loop
@@ -130,7 +130,7 @@ midi_rx_check_loop_avr:
                         ; Daten von AVR getrennt auswerten
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-     midi_rx_check_avr:
+     midi_rx_check_avr: 
                         ; bei AVR  Controller Change nur auf ALL NOTES OFF pr�fen, sonst senden
                         LOAD s0, 00
                         STORE s0, s_midi_avr_rxflag                      ; Rx-Flag löschen
@@ -144,7 +144,7 @@ midi_rx_check_loop_avr:
                         FETCH s0, s_midi_avr_data1
                         COMPARE s0, 123'd                                ; All Notes OFF?
                         JUMP Z, allnotesoff_manual
-midi_rx_check_avr_send:
+midi_rx_check_avr_send: 
                         ; empfangenen Datensatz 1 bis 3 Bytes vom AVR an SAM und DIN-Buchse senden
                         FETCH s0, s_midi_avr_cmd
                         CALL midi_tx_s0
@@ -166,27 +166,27 @@ midi_rx_check_avr_send:
                         ; hier kein SysEx mehr, wurde bereits direkt weitergeleitet
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-      midi_rx_decode_1:
+      midi_rx_decode_1: 
                         ; Daten vom erstem MIDI-Eingang interpretieren, falls vollständig
                         LOAD s0, 00
                         STORE s0, s_midi_1_rxflag                        ; Rx-Flag löschen
                         LOAD s6_idx_ptr, s_midi_1_cmd
                         JUMP midi_rx_decode_copy                         ; Ende und RETURN
                         ;
-      midi_rx_decode_2:
+      midi_rx_decode_2: 
                         ; Daten vom zweiten MIDI-Eingang interpretieren, falls vollst�ndig
                         LOAD s0, 00
                         STORE s0, s_midi_2_rxflag                        ; Rx-Flag löschen
                         LOAD s6_idx_ptr, s_midi_2_cmd
                         JUMP midi_rx_decode_copy                         ; Ende und RETURN
                         ;
-    midi_rx_decode_sam:
+    midi_rx_decode_sam: 
                         ; Daten vom SAM5504 USB MIDI-Eingang interpretieren, falls vollst?ndig
                         LOAD s0, 00
                         STORE s0, s_midi_sam_rxflag                      ; Rx-Flag löschen
                         LOAD s6_idx_ptr, s_midi_sam_cmd
                         ; JUMP midi_rx_decode_copy                           ; Ende und RETURN
-   midi_rx_decode_copy:
+   midi_rx_decode_copy: 
                         ; Daten der empfangenen MIDI-Nachricht in die allgemeinen MIDI-Register kopieren
                         FETCH s0, (s6_idx_ptr)                           ; zeigt auf s_midi_xx_cmd
                         STORE s0, s_midi_cmd
@@ -207,7 +207,7 @@ midi_rx_check_avr_send:
                         ; s_midi_cmd, s_midi_data1, s_midi_data2, s_midi_len
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-        midi_rx_decode:
+        midi_rx_decode: 
                         CALL midi_sam_waitbuf                            ; Warte bis SAM5504-Buffer aufnahmebereit
                         FETCH s0, s_midi_cmd
                         OUTPUT s0, MIDI_TX_SAM                           ; immer alles an SAM5504 senden
@@ -220,7 +220,7 @@ midi_rx_check_avr_send:
                         JUMP Z, midi_rx_decode_0
                         FETCH s0, s_midi_data2
                         OUTPUT s0, MIDI_TX_SAM
-      midi_rx_decode_0:
+      midi_rx_decode_0: 
                         FETCH s0, s_midi_cmd
                         AND s0, 0F                                       ; Kanal isolieren
                         STORE s0, s_midi_chan_masked
@@ -248,11 +248,11 @@ midi_rx_check_avr_send:
                         ADD s0, 01
                         COMPARE s1, s0                                   ; eingestellter Kanal +3?
                         JUMP Z, midi_to_avr
-                        RETURN
+                        RETURN 
                         ;
                         ; Hier kommen alle Manuale und Pedal an
                         ;
-    midi_rx_note_pedal:
+    midi_rx_note_pedal: 
                         ; Pedal-Sonderbehandlung, weil nur ein Bit statt ein Byte abgespeichert wird
                         FETCH s0, s_midi_cmd_masked
                         COMPARE s0, 80
@@ -271,7 +271,7 @@ midi_rx_check_avr_send:
                         ; Dynamik ist 0 bei Key-Off-Befehl
                         JUMP midi_rx_writedata
                         ;
-          midi_rx_note:
+          midi_rx_note: 
                         ; MIDI-NoteOn/NoteOff-Befehle? Dynamik bereits in s2, Manual in s9_manual_select
                         FETCH s0, s_midi_cmd_masked
                         COMPARE s0, 90
@@ -279,10 +279,10 @@ midi_rx_check_avr_send:
                         COMPARE s0, 80
                         JUMP NZ, midi_rx_check_rest                      ; wenn kein ON/OFF
                         ; ist ein ON/OFF-Befehl
-      midi_rx_note_off:
+      midi_rx_note_off: 
                         LOAD s0, 00                                      ; MIDI-Befehl Taste OFF, Dynamik 0
                         STORE s0, s_midi_data2                           ; Dynamik dieser Taste 0
-    midi_rx_checksplit:
+    midi_rx_checksplit: 
                         LOAD s0, c_corevers
                         COMPARE s0, c_corevers_midionly
                         JUMP NZ, midi_rx_writedata                       ; JUMP wenn kein MIDI-Scan-Driver
@@ -310,7 +310,7 @@ midi_rx_check_avr_send:
                         ;
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-   midi_rx_check_upper:
+   midi_rx_check_upper: 
                         COMPARE s8_msb, 01                               ; Splitmode 1 = Lower to Upper?
                         JUMP Z, midi_rx_check_upper_1
                         COMPARE s8_msb, 02                               ; Splitmode 2 = Pedal to Upper?
@@ -321,21 +321,21 @@ midi_rx_check_avr_send:
                         JUMP Z, midi_rx_check_upper_4
                         JUMP midi_rx_writedata                           ; wenn 0, kein Split für Upper
                         ;
- midi_rx_check_upper_1:
+ midi_rx_check_upper_1: 
                         ; wenn unterhalb Splitpunkt, auf LOWER schreiben
                         COMPARE s5_scan_key, s7_lsb
                         JUMP NC, midi_rx_writedata                       ; JUMP wenn s5_scan_key > splitpoint
                         ; unterhalb Splitpunkt ausgef�hrt:
                         JUMP midi_rx_remap_to_lower
                         ;
- midi_rx_check_upper_2:
+ midi_rx_check_upper_2: 
                         ; wenn unterhalb Splitpunkt, auf PEDAL schreiben
                         COMPARE s5_scan_key, s7_lsb
                         JUMP NC, midi_rx_writedata                       ; JUMP wenn s5_scan_key > splitpoint
                         ; unterhalb Splitpunkt ausgef�hrt:
                         JUMP midi_rx_remap_to_pedal                      ; und RETURN
                         ;
- midi_rx_check_upper_3:
+ midi_rx_check_upper_3: 
                         ; wenn unterhalb Splitpunkt, auf LOWER schreiben, 1 Oktave darüber
                         COMPARE s5_scan_key, s7_lsb
                         JUMP NC, midi_rx_writedata                       ; JUMP wenn s5_scan_key > splitpoint
@@ -343,7 +343,7 @@ midi_rx_check_avr_send:
                         ADD s5_scan_key, 12'd                            ; 1 Oktave addieren
                         JUMP midi_rx_remap_to_lower                      ; PEDAL abfragen und RETURN
                         ;
- midi_rx_check_upper_4:
+ midi_rx_check_upper_4: 
                         ; hier nur noch 4 = Lower to Upper +2 Oktaven
                         ; wenn unterhalb Splitpunkt, auf LOWER schreiben, 2 Oktaven darüber
                         COMPARE s5_scan_key, s7_lsb
@@ -354,19 +354,19 @@ midi_rx_check_avr_send:
                         ;
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-   midi_rx_check_lower:
+   midi_rx_check_lower: 
                         COMPARE s8_msb, 00                               ; Splitmode 0 = Pedal to Lower?
                         JUMP Z, midi_rx_check_lower_0
                         COMPARE s8_msb, 05                               ; Splitmode 0 = Pedal to Lower?
                         JUMP Z, midi_rx_check_lower_5
                         JUMP midi_rx_writedata                           ; JUMP wenn nicht
- midi_rx_check_lower_0:
+ midi_rx_check_lower_0: 
                         ; nur 0 = Pedal to Lower behandeln
                         COMPARE s5_scan_key, s7_lsb
                         JUMP NC, midi_rx_writedata                       ; JUMP wenn s5_scan_key > splitpoint
                         ; unterhalb Splitpunkt ausgef�hrt:
                         JUMP midi_rx_remap_to_pedal                      ; und RETURN
- midi_rx_check_lower_5:
+ midi_rx_check_lower_5: 
                         ; nur 5 = Add Pedal to Lower behandeln
                         COMPARE s5_scan_key, s7_lsb
                         JUMP NC, midi_rx_writedata                       ; JUMP wenn s5_scan_key > splitpoint
@@ -376,7 +376,7 @@ midi_rx_check_avr_send:
                         ;
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-midi_rx_remap_to_pedal:
+midi_rx_remap_to_pedal: 
                         LOAD s9_manual_select, 02
                         FETCH s0, s_midi_data2
                         COMPARE s0, 00
@@ -386,7 +386,7 @@ midi_rx_remap_to_pedal:
                         STORE s0, s_midi_data2
                         JUMP midi_rx_writedata                           ; im Main-Programm weiter
                         ;
-midi_rx_remap_to_lower:
+midi_rx_remap_to_lower: 
                         STORE s5_scan_key, s_midi_data1
                         LOAD s9_manual_select, 01
                         JUMP midi_rx_writedata                           ; im Main-Programm weiter
@@ -398,15 +398,15 @@ midi_rx_remap_to_lower:
                         ;
                         ; MIDI-Tasten außerhalb des 5-Oktaven-Umfangs oktavweise verschieben
                         ;
-       midi_adj_foldbk:
+       midi_adj_foldbk: 
                         FETCH s0, s_midi_data1
-     midi_adj_foldbk_1:
+     midi_adj_foldbk_1: 
                         COMPARE s0, c_gen_firstkey                       ; Carry bei s5_scan_key - 36?
                         JUMP NC, midi_adj_foldbk_2                       ; Carry nicht gesetzt >=36
                         ADD s0, 12'd
                         JUMP midi_adj_foldbk_1
                         ;
-     midi_adj_foldbk_2:
+     midi_adj_foldbk_2: 
                         STORE s0, s_midi_data1
                         COMPARE s0, c_gen_lastkey_plus1                  ; Carry bei s5_scan_key - 97?
                         RETURN C
@@ -415,7 +415,7 @@ midi_rx_remap_to_lower:
                         ;
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-    midi_rx_check_rest:
+    midi_rx_check_rest: 
                         ; Program Change und Controller? Dann an AVR
                         ; s0 enthält s_midi_cmd_masked
                         COMPARE s0, C0
@@ -424,13 +424,13 @@ midi_rx_remap_to_lower:
                         JUMP Z, midi_to_avr
                         COMPARE s0, B0
                         RETURN NZ                                        ; alles andere unberücksichtigt
-          midi_cchange:
+          midi_cchange: 
                         ; bei Controller Change auf ALL NOTES OFF prüfen, dann weiter wie Program Change
                         FETCH s0, s_midi_data1                           ; eingestellter Kanal, Piano-Maske
                         COMPARE s0, 123'd                                ; All Notes OFF?
                         JUMP Z, allnotesoff_manual                       ; falls nicht, weiter mit AVR-IRQ
                         ;
-           midi_to_avr:
+           midi_to_avr: 
                         ; AVR-IRQ ausl�sen; MIDI-Daten an SPI
                         FETCH s0, s_midi_cmd
                         OUTPUT s0, MIDI_CMD
@@ -449,7 +449,7 @@ midi_rx_remap_to_lower:
                         AND s0, 80
                         RETURN Z                                         ; wenn 0, dann nicht behandeln, abgeschaltet
                         ;
-          midi_sustain:
+          midi_sustain: 
                         ; s9_manual_select enth�lt empfangenes Ziel (0, 1 oder 2)
                         COMPARE s1, 40
                         JUMP NZ, midi_sostenuto
@@ -457,11 +457,11 @@ midi_rx_remap_to_lower:
                         LOAD s6_idx_ptr, s_sustain_upr
                         JUMP midi_sost_sustain                           ; evt. von SAM5504-HW-Input, muss auch gesendet werden
                         ;
-        midi_sostenuto:
+        midi_sostenuto: 
                         COMPARE s1, 42
                         RETURN NZ
                         LOAD s6_idx_ptr, s_sosten_upr
-     midi_sost_sustain:
+     midi_sost_sustain: 
                         ADD s6_idx_ptr, s9_manual_select
                         FETCH s2, s_midi_data2
                         STORE s2, (s6_idx_ptr)
@@ -475,43 +475,43 @@ midi_rx_remap_to_lower:
                         OUTPUT s0, MIDI_TX_DIN                           ; TX Midi auf DIN-Buchse
                         FETCH s0, s_midi_data2
                         OUTPUT s0, MIDI_TX_DIN                           ; TX Midi auf DIN-Buchse
-                        RETURN
+                        RETURN 
                         ;
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-            midi_tx_s0:
+            midi_tx_s0: 
                         CALL midi_out_waitbuf                            ; benutzt s1!
                         OUTPUT s0, MIDI_TX_DIN                           ; TX Midi auf beiden Ports
                         OUTPUT s0, MIDI_TX_SAM
                         LOAD s1, 00
                         STORE s1, s_midi_activesensing                   ; Active Sensing Reset
-                        RETURN
+                        RETURN 
                         ;
       midi_out_waitbuf: ; MIDI MAIN OUT
                         INPUT s1, TX_STATUS
                         TEST s1, 0A                                      ; nur 0, wenn beide TX DIN und TX SAM FIFOs nicht voll sind
                         JUMP NZ, midi_out_waitbuf                        ; auf Buffer-Leerung warten
-                        RETURN
+                        RETURN 
                         ;
       midi_sam_waitbuf: ; SAM5504-Buffer aufnahmebereit? Zweiter Eingang
                         INPUT s1, TX_STATUS
                         TEST s1, 08                                      ; nur 0, wenn TX SAM FIFO nicht voll ist
                         JUMP NZ, midi_sam_waitbuf                        ; auf Buffer-Leerung warten
-                        RETURN
+                        RETURN 
                         ;
                         ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                         ;
-          midi_testout:
+          midi_testout: 
                         ; für Debug-Zwecke, sendet MIDI-Programchange mit Wert in s0
                         LOAD s1, C0
                         OUTPUT s1, MIDI_TX_DIN                           ; TX Midi auf DIN-Buchse
                         OUTPUT s1, MIDI_TX_SAM                           ; TX Midi an SAM
                         OUTPUT s0, MIDI_TX_DIN                           ; TX Midi auf DIN-Buchse
                         OUTPUT s0, MIDI_TX_SAM                           ; TX Midi an SAM
-                        RETURN
+                        RETURN 
                         ;
                         ; Active Sensing senden falls Timer abgelaufen
-   midi_active_sensing:
+   midi_active_sensing: 
                         FETCH s0, s_midi_activesensing                   ; nach 256 ms Active Sensing senden
                         ADD s0, 01
                         STORE s0, s_midi_activesensing
@@ -523,7 +523,7 @@ midi_rx_remap_to_lower:
                         LOAD s0, FE
                         OUTPUT s0, MIDI_TX_DIN
                         OUTPUT s0, MIDI_TX_SAM
-                        RETURN
+                        RETURN 
                         ;
                         ; ##############################################################################
                         ;
@@ -545,20 +545,20 @@ midi_rx_remap_to_lower:
                         ; SysCmds ausfiltern, Datenbytes sammeln und Flag setzen wenn vollständig
                         ; Nur noch eine Routine für alle 3 Eingänge, Index wird vorher gesetzt
                         ;
-        midi_1_getbyte:
+        midi_1_getbyte: 
                         LOAD s6_idx_ptr, 00                              ; Zeigt auf MIDI Input 1
                         INPUT s0, MIDI_IN1
                         JUMP midi_setindex
-        midi_2_getbyte:
+        midi_2_getbyte: 
                         LOAD s6_idx_ptr, 01                              ; Zeigt auf MIDI Input 2
                         INPUT s0, MIDI_IN2
                         JUMP midi_setindex
-      midi_sam_getbyte:
+      midi_sam_getbyte: 
                         LOAD s6_idx_ptr, 03                              ; Zeigt auf MIDI Input SAM (USB)
                         INPUT s0, MIDI_IN_SAM
                         ; JUMP midi_setindex
                         ;
-         midi_setindex:
+         midi_setindex: 
                         ; Index für MIDI 1/2 Befehle setzen, s6_idx_ptr enthält 0..3
                         LOAD midi_cmd_idx, c_midi_cmd_base
                         ADD midi_cmd_idx, s6_idx_ptr
@@ -575,7 +575,7 @@ midi_rx_remap_to_lower:
                         ; MIDI Daten wurden von einem der Inputs empfangen, Byte in s0
                         ; SysCmds ausfiltern, Datenbytes sammeln und Flag setzen wenn vollständig
                         ;
-          midi_getbyte:
+          midi_getbyte: 
                         COMPARE s0, F0                                   ; RealTime ab $F0?
                         JUMP C, midi_channel_message                     ; wenn kleiner als F0, mit Channel Messages weiter
                         COMPARE s0, F8                                   ; RealTime ab $F8?
@@ -588,9 +588,9 @@ midi_rx_remap_to_lower:
                         ; F1 Timecode Quarter Frame, F2 Song Position Pointer, F3 Select Song
                         LOAD s1, FF
                         STORE s1, (midi_ignoreflag_idx)                  ; Flag setzen: folgende Daten ignorieren
-                        RETURN
+                        RETURN 
                         ;
-  midi_channel_message:
+  midi_channel_message: 
                         TEST s0, 80
                         JUMP Z, midi_is_databyte                         ; kleiner als $80
                         ; ist ab hier eine Channel Message
@@ -601,9 +601,9 @@ midi_rx_remap_to_lower:
                         FETCH s1, (midi_SysExFlag_idx)
                         COMPARE s1, 00
                         JUMP NZ, midi_stop_avr_sysex                     ; Sysex durch Channel-Command beendet
-                        RETURN
+                        RETURN 
                         ;
-      midi_is_databyte:
+      midi_is_databyte: 
                         ; MIDI-Byte noch in s0
                         LOAD s2, c_midi_data1_base
                         ADD s2, s6_idx_ptr                               ; s2 wird Pointer auf Datenbyte-1-Scratch
@@ -633,7 +633,7 @@ midi_rx_remap_to_lower:
            midi_is_db1: ; MIDI-Byte noch in s0
                         ; s2 zeigt noch auf c_midi_data1_base + s6_idx_ptr
                         STORE s0, (s2)
-                        RETURN
+                        RETURN 
                         ; hier landen die Datenbytes von 1-Datenbyte-Befehlen:
      midi_is_db_single: ; MIDI-Byte noch in s0
                         STORE s0, (s2)                                   ; in beide Datenbytes speichern
@@ -651,20 +651,20 @@ midi_rx_remap_to_lower:
                         ADD s2, s6_idx_ptr
                         LOAD s1, FF
                         STORE s1, (s2)                                   ; jetzt vollständig, RX-Flag setzen
-                        RETURN
+                        RETURN 
                         ;
-  midi_start_avr_sysex:
+  midi_start_avr_sysex: 
                         LOAD s1, FF
                         STORE s1, (midi_SysExFlag_idx)
                         JUMP midi_avr_sysex_s0
                         ;
                         ; SysEx-Datenübertragung immer komplett abwarten
-   midi_stop_avr_sysex:
+   midi_stop_avr_sysex: 
                         LOAD s1, 00
                         STORE s1, (midi_SysExFlag_idx)
                         LOAD s0, F7
                         ; JUMP midi_avr_sysex_s0
-     midi_avr_sysex_s0:
+     midi_avr_sysex_s0: 
                         ; SysEx-Byte in s0
                         ; 3 Bytes werden parallel übertragen, deshalb Umsetzung auf Controller für AVR-SPI
                         LOAD s1, B0
@@ -672,12 +672,12 @@ midi_rx_remap_to_lower:
                         LOAD s1, 78                                      ; eigener Controller $78
                         OUTPUT s1, MIDI_DB1
                         OUTPUT s0, MIDI_DB2                              ; SysEx-Daten einschl. F0 und F7, hier 8 Bit zul?ssig!
-       midi_strobe_avr:
+       midi_strobe_avr: 
                         LOAD s0, 01                                      ; pos. Flanke an MIDI-FIFO
                         OUTPUT s0, MIDI_STR
                         LOAD s0, 00
                         OUTPUT s0, MIDI_STR
-                        RETURN
+                        RETURN 
                         ;
                         ;
                         ; ##############################################################################
@@ -686,7 +686,7 @@ midi_rx_remap_to_lower:
                         ;
                         ; SPI-MIDI Daten wurden von AVR empfangen
                         ; vereinfachte SysEx-Behandlung
-      midi_avr_getbyte:
+      midi_avr_getbyte: 
                         ; LOAD s1, FA ; ##### TEST #####
                         ; OUTPUT s1, AUXPORT ; Trigger für LA
                         ; OUTPUT s0, AUXPORT ; ##### TEST #####
@@ -705,8 +705,8 @@ midi_rx_remap_to_lower:
                         STORE s1, s_midi_avr_counter
                         STORE s1, s_midi_avr_SysExFlag
                         STORE s0, s_midi_avr_cmd
-                        RETURN
-        midi_avr_is_db:
+                        RETURN 
+        midi_avr_is_db: 
                         FETCH s1, s_midi_avr_counter
                         ADD s1, 01
                         STORE s1, s_midi_avr_counter
@@ -721,13 +721,13 @@ midi_rx_remap_to_lower:
                         JUMP Z, midi_avr_is_db_single
                         COMPARE s1, D0                                   ; channel pressure
                         JUMP Z, midi_avr_is_db_single
-       midi_avr_is_db1:
+       midi_avr_is_db1: 
                         STORE s0, s_midi_avr_data1
-                        RETURN
+                        RETURN 
                         ; hier landen die Datenbytes von 1-Datenbyte-Befehlen:
- midi_avr_is_db_single:
+ midi_avr_is_db_single: 
                         STORE s0, s_midi_avr_data1
-       midi_avr_is_db2:
+       midi_avr_is_db2: 
                         STORE s0, s_midi_avr_data2
                         FETCH s1, s_midi_avr_counter
                         STORE s1, s_midi_avr_len                         ; Anzahl empfangener Datenbytes
@@ -735,16 +735,16 @@ midi_rx_remap_to_lower:
                         STORE s1, s_midi_avr_counter                     ; letzte Anzahl empfangener Datenbytes
                         LOAD s1, FF
                         STORE s1, s_midi_avr_rxflag                      ; jetzt vollst�ndig, Flag setzen
-                        RETURN
+                        RETURN 
                         ; SysEx-Daten vom AVR unbehandelt senden, aber Flag setzen
-       midi_startSysEx:
+       midi_startSysEx: 
                         CALL midi_tx_s0                                  ; verwendet s1
                         LOAD s1, FF
                         STORE s1, s_midi_avr_SysExFlag
-                        RETURN
-        midi_stopSysEx:
+                        RETURN 
+        midi_stopSysEx: 
                         CALL midi_tx_s0                                  ; verwendet s1
                         LOAD s1, 00
                         STORE s1, s_midi_avr_SysExFlag
-                        RETURN
+                        RETURN 
                         ;
