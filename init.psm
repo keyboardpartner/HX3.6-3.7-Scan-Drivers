@@ -58,7 +58,7 @@
                         CALL scantimer_start
                         LOAD s0, 00
                         OUTPUT s0, RAM_PAGE
-                        JUMP send_alloff ; MIDI senden
+                        JUMP send_alloff ; Timer und MPX löschen, MIDI senden
                         ;
     allnotesoff_manual:
                         LOAD s0, 00

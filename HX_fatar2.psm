@@ -404,8 +404,8 @@ local_was_idle_pedal: ; war vorher OFF
                       OR s1, sB_keystatus_lwr
                       CALL local_rd_keycont_s0             ; vorherigen Kontaktstatus der Taste in s0
                       OR s0, s1
-                      COMPARE s0, 00                       ; keine Kontakte, vorher auch keine Kontakte?
-                      JUMP Z, local_keys_skip_1            ; keine Kontaktänderung, nächste Taste
+                      COMPARE s0, 00                       ; keine Kontakte, vorher auch nicht
+                      JUMP Z, local_keys_skip_1            ; keine Kontaktänderung, Split und Statemachine überspringen
                       CALL local_wr_keycont_s1             ; Kontaktänderung, neuen Status in RAM schreiben
                       CALL local_handle_keybds
    local_keys_skip_1: 
