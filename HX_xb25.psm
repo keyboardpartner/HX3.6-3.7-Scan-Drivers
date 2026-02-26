@@ -54,7 +54,8 @@
                       CONSTANT c_corevers_midionly, 63     ; zum Vergleichen im MIDI-Scan-Treiber
                       CONSTANT c_dyn_threshold, 40         ; MIDI-Dynamikschwelle für full click
                       CONSTANT c_midi_mindyn, 10           ; MIDI-Minimaldynamik langsame Taste
-                      CONSTANT c_time_offset, 0A           ; Offset, wird von gemessener Velocity-Zeit abgezogen
+                      ; Timerwert 06 bei äußerst schneller Taste, 7E bei langsamer Taste, XB2-Tataturcontroller zählt nur mit 7 Bit
+                      CONSTANT c_time_offset, 0A           ; Offset, wird von Velocity-Zeit des Tastaturcontrollers abgezogen
                       CONSTANT c_time_threshold, A0        ; Velocity-Zeitschwelle für full click
                       ;
                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -203,21 +204,11 @@
                       ; ###############################################################################
                       ;
                       ; ------------------------------------------------------------------------------
-                      ; PEDAL SR 4014:
-                      ; SR CLK 4014      AUXPIO1 (D0)
-                      ; SR Load 4014     AUXPIO2 (D1)
-                      ; Shift Out Upper  AUXPIO3 (D2)
-                      ; Shift Out Lower  AUXPIO4 (D3)
-                      ; Shift Out Pedal  AUXPIO5 (D4)
-                      ; Timing-Debug     AUXPIO6 (D5)
+                      ; Hier nur für Split
                       ; ------------------------------------------------------------------------------
                       ;
-                      ; Pedal-Loop, ca. 40 µs mit 160 ns Impulsen
-                      ; Pedal-SR wird jetzt grundsätzlich getrennt abgefragt, ca. 40 µs
-                      ;
-                      ;
     local_scan_pedal: ; kein Pedal angeschlossen
-                      RETURN                               ;
+                      RETURN 
                       ;
     local_handle_ped: ; Für Split auf Pedal
                       AND s3_keystatus, 01
@@ -225,7 +216,7 @@
                       FETCH s0, s_transpose
                       ADD s0, s5_scan_key
                       STORE s0, s_local_key                ; Für Event-MPX und MIDI Send
-                      ; weiter mit State Machine und dann zurück
+                      ; weiter mit Pedal State Machine und dann zurück
                       ;
                       ; -------------------------- Mealy-Zustandsautomat -----------------------------
                       ;
@@ -258,7 +249,7 @@ local_was_idle_pedal: ; war vorher OFF
                       LOAD s2, c_state_idle_pedal
                       CALL local_wr_state_s2               ; neuer Timer-State: c_state_idle_pedal
                       LOAD s3_keystatus, c_pedal_idle
-                      CALL local_wr_s3_keystat             ; neuer Kontakt: ON
+                      CALL local_wr_s3_keystat             ; neuer Kontakt: OFF
                       LOAD s0, 00                          ; Pedal OFF senden
                       STORE s0, s_local_dyn
                       JUMP local_states_out                ; Eintragen, MIDI OFF senden und Ende
@@ -567,9 +558,9 @@ local_handle_split_5: ; 5 = Add Pedal to Lower
     local_new_on_xb2: 
                       LOAD s2, c_state_stopped
                       CALL local_wr_state_s2               ; neuer Timer-State: c_key_on
-                      LOAD s0, s3_keystatus                ; Dynamik aus s1 in s3_keystatus, 128 = schnellste Taste, 10 = langsamste Taste
-                      ; Timerwert 04 bei äußerst schneller Taste, 7E bei langsamer Taste, zählt nur mit 7 Bit
-                      SUB s0, c_time_offset                ; Offset von 6 abziehen, um Dynamik etwas zu entzerren
+                      LOAD s0, s3_keystatus                ; Zeit ist in s3_keystatus
+                      ; Timerwert 04 bei äußerst schneller Taste, 7E bei langsamer Taste, XB2-Tataturcontroller zählt nur mit 7 Bit
+                      SUB s0, c_time_offset                ; Offset abziehen, um Dynamik etwas zu entzerren
                       CALL C, xb2_load_zero                ; falls jetzt negativ, mit 0 laden
                       ; SL0 s0                             ; Timer in s0 ggf. hochskalieren, max. 254
                       OUTPUT s0, DYN_TABLE_ADDR            ; Adresse für Dyntable schreiben
