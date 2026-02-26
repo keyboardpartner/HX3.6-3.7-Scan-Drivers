@@ -222,7 +222,6 @@
                         CALL C, load_s0_with_FF               ; wenn Zeit über Schwelle, auf 255 = schnellste Taste setzen
      local_states_on_0: ; Wert in s0 jetzt 1 bis 255, 1 = langsamste Taste, 255 = schnellste Taste
                         XOR s0, FF                            ; invertieren, 0 = schnellste Taste, 254 = langsamste Taste
-                        COMPARE s0, c_dyn_threshold           ; Dynamikschwelle für full click
                         OUTPUT s0, DYN_TABLE_ADDR             ; Adresse für Dyntable schreiben
                         LOAD s0, s0                           ; Delay für BRAM Zugriff
                         INPUT s0, DYN_TABLE                   ; Dyntable-Wert in s0, 127 = schnellste Taste, 10 = langsamste Taste
