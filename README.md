@@ -4,15 +4,16 @@
 
 ### Scan drivers for PicoBlaze Core in HX3.6/3.7 Sound Engine (FPGA)
 
-These are various scan driver sources for HX3.6 and HX3.7 mainboards, to be compiled with PicoBlaze Assembler KCPSM6 from Ken Chapman.
+These are various scan driver sources for HX3.6 and HX3.7 mainboards, to be compiled with PicoBlaze Assembler KCPSM6 from Ken Chapman. All drivers for velocity-sensitive keybeds (Fatar, Pulse, XB2/XB5) now come with an improved dynamic scaling using a dedicated time-to-velocity table. This table is created by the main MCU and automatically uploaded to the FPGA sound engine. Due to new velocity table, these drivers are **no longer compatible** with HX3.5 boards (table RAM does not fit in older FPGA).
 
-Repository contains KCPSM6 and HEX converter for creation of *scan.dat* files; simply use the batch files *make_xxx.bat* to execute. The batch file will compile the *.psm* source, convert resulting *.hex* file to a *.dat* file suitable for HX3 upload, rename it and re-format the source.
+Repository contains KCPSM6 assambler and HEX converter (runs on Windows OS) for creation of *scan.dat* files; simply use the batch files *make_xxx.bat* to execute. The batch file will compile the *.psm* source, convert resulting *.hex* file to a *.dat* file suitable for HX3 upload, rename it and re-format the source.
 
-Schematics to be found on http://updates.keyboardpartner.de/Files/index.php?dir=Schematics
+Schematics of scan boards to be found on http://updates.keyboardpartner.de/Files/index.php?dir=Schematics
 
-TODO: Update XB2/XB5 scan driver to new framework.
+TODO: Full testing of XB2/XB5 scan driver.
 
-**Version Info:**
+### Version Info
+* 26.02.2026 #52 Für FPGA ab #23022024, mit ladbarer Dynamik-Tabelle, siehe *states_dyntable.psm*, XB2/XB5 ebenfalls mit Support für Dynamik-Tabelle (vorher rein linear)
 * 27.01.2025 #51 Neues universelles Framework mit *includes*, gemeinsam für alle HX3 Scan Driver
 * 10.12.2025 #49 Support für neues FPGA mit separatem (dritten) SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft
 * 11.07.2025 #47 Neue Organisation der Tastenabfrage mit vertauschter Spalte/Reihe (4017/4024-Zähler) bei Fatar, deutlich schneller
