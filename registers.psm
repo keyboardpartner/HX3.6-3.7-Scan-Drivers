@@ -66,6 +66,7 @@
                       CONSTANT c_page_sostenuto, 07        ; Sostenuto-Flags 0..60
                       CONSTANT c_page_keycontacts, 08      ; vorheriger Tastenzustand 0..60
                       CONSTANT c_page_xb2data, 09          ; Dynamik-Werte XB2 Upper
+                      CONSTANT c_page_presetkeys, 09       ; Preset-Tastenzustand Upper, Lower
                       ;
                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                       ; Portadressen bidirektional
@@ -109,7 +110,7 @@
                       CONSTANT SWITCHPORT_DDR, 29          ; Switches Port Data Direction
                       ; Output ports
                       CONSTANT c_strobe_mask, 20           ; für indirektes Schreiben
-                      CONSTANT BASE_STROBE, 20            ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
+                      CONSTANT BASE_WRITE_STRB, 20            ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
                       CONSTANT UPPER_STROBE, 20            ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
                       CONSTANT LOWER_STROBE, 21            ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Lower (1 Byte)
                       CONSTANT PEDAL_STROBE, 22            ; Schreibzugriff erzeugt Write für Pedal-Bits (2 Bits)
@@ -154,7 +155,7 @@
                       CONSTANT FEATURE_SPI_FLAG, 30        ; war "0000000" & spiflag, jetzt "0000001" & spiflag wenn neues FPGA
                       CONSTANT TX_STATUS, 31               ; Bit 0 = TX DIN (1) voll, Bit 1 = TX SAM (2) voll
                       CONSTANT c_read_mask, 34             ; für indirektes Lesen
-                      CONSTANT RD_ALL_BASE, 34             ; für indirektes Lesen
+                      CONSTANT BASE_READ_STRB, 34             ; für indirektes Lesen
                       CONSTANT RD_UPPER, 34                ; Upper-Byte vom MPX-RAM
                       CONSTANT RD_LOWER, 35                ; Lower-Byte vom MPX-RAM
                       CONSTANT RD_PEDAL, 36                ; Pedal-Bits vom MPX-RAM (1:0)

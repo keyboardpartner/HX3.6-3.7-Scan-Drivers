@@ -1,0 +1,704 @@
+                       ;
+                       ; ##############################################################################
+                       ;
+                       ;    #######    #    #######    #    ######      #          #####    #
+                       ;    #         # #      #      # #   #     #    ##         #     #  ##
+                       ;    #        #   #     #     #   #  #     #   # #         #       # #
+                       ;    #####   #     #    #    #     # ######      #   ##### ######    #
+                       ;    #       #######    #    ####### #   #       #         #     #   #
+                       ;    #       #     #    #    #     # #    #      #         #     #   #
+                       ;    #       #     #    #    #     # #     #   #####        #####  #####
+                       ;
+                       ; ##############################################################################
+                       ; ############ KCPSM6 PicoBlaze Keyboard Scanner by cm 10/2010 #################
+                       ; #################### for 12 BIT ADDRESS ROM (4096 Words) #####################
+                       ; ##############################################################################
+                       ;
+                       ; https://www.amd.com/en/products/adaptive-socs-and-fpgas/intellectual-property/picoblaze.html
+                       ; https://www1.hs-bremerhaven.de/kmueller/VHDL/PB_Instr_Ref.pdf
+                       ;
+                       ; 26.02.2026 #52 für FPGA ab #23022024, mit ladbarer Dynamik-Tabelle, siehe "states_dyntable.psm"
+                       ; 27.01.2026 #51 Neues universelles Framework, hier für Fatar 61-Tastatur mit 8x8 Matrix und FatarScan 1-61 Board (neu) mit 47HC166-SR
+                       ; 10.12.2025 #49 Support für neues FPGA mit separatem SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft
+                       ; 11.07.2025 #47 Neue Organisation der Tastenabfrage mit vertauschter Spalte/Reihe (4017/4024-Zähler), deutlich schneller
+                       ; 23.07.2024 #46 Bugfix: MIDI SEND ENABLES waren nicht implementiert, siehe "local_states_out"
+                       ; 13.06.2024 #44 Differenzierter Key Click, etwas schwächer; #45 einstellbar on/off
+                       ; 29.06.2022 #42 MIDI IN/GenTranspose jetzt für alle, KeyTranspose (Offset) nur MIDI OUT
+                       ; 11.01.2022 #41 Extrem verbessertes Timing, 500µs Scan-Loop, einfacheres RAM-Handling
+                       ; 31.12.2021 #40 Key Reverse State beim Verlassen der Endstellung, sendet früher, Noise etwas verringert
+                       ; 18.10.2021 #39 Octave Shift für Upper und Lower in Manual Scan
+                       ; 30.07.2021 #37 Sendet page_init bei Split-Änderungen, SplitMode 5 (AddPedalToLower)
+                       ; 18.05.2021 #36 Andere Noise-Berechnung
+                       ; 12.01.2021 #33 Bug in ResetDynTimers behoben
+                       ; 12.01.2021 #31 Dynamik-Ermittlung über variables Timer-Dekrement (1/t)
+                       ; 09.01.2021 #30 Scan-Dynamik jetzt per Statemachine
+                       ; 03.09.2020 #28 Keine Übersetzung Sostenuto mehr
+                       ; 22.02.2020 #25 Auch Kanal +3 an AVR für Touchpad
+                       ; 20.11.2019 #23 MIDI-Dispatcher verbessert, wird öfter ausgeführt
+                       ; 10.11.2019 #20 Local Enables auf SPI $2E
+                       ; 21.02.2018 #19 Kleine Verzögerung vor Auslesen der Tastenkontakte wg. Emils Geisternoten
+                       ; 13.02.2018 #18 Bug in Key Transpose behoben
+                       ; 22.11.2018 #17 Split-Handling jetzt nur noch in Tastatur-Scan
+                       ; 12.09.2018 #15 Bug in Midi-Kanalwahl behoben
+                       ; 14.08.2018 #14 Bug in local_states_off (Dyn. 1 gesendet) behoben
+                       ; 09.08.2018 #12 Sostenuto-Controller 42 geändert auf 45, HOLD2-Pedal wg. NI B4-PERC Konflikt
+                       ; 24.04.2018 #11 Bugfixes für Fatar
+                       ; 20.10.2017 #10 Zusätzlicher MIDI-Ausgang für SAM5504
+                       ; 10.10.2017 Angepasst für KCPSM6, Inputs für Cancel Manual und HW-Sostenuto/Sustain auf PL Auxiliary
+                       ; Pins schalten nach Masse!
+                       ; Pin 6 = Bit 5 Sustain Upper
+                       ; Pin 5 = Bit 4 Sostenuto Upper
+                       ; Pin 4 = Bit 3 Sustain Lower
+                       ; Pin 3 = Bit 2 Sostenuto Lower
+                       ; Pin 2 = Bit 1 Cancel MIDI Kanal invert., 11 = Cancel Off, 10 = Cancel Upper,
+                       ; Pin 1 = Bit 0 Cancel MIDI Kanal invert., 01 = Cancel Lower, 00 = Cancel Pedal
+                       ;
+                       ; $60=SR4014, $61=Fatar, $62=Opto, $63=MIDI, $64=OrganScan61, $65=XB2-5, $66=Fatar61 (neu), $67=Fatar73 (neu, mit Presets)
+                       CONSTANT c_corerevi, 52              ; Revisionsnummer
+                       CONSTANT c_corevers, 67
+                       CONSTANT c_corevers_midionly, 63     ; zum Vergleichen im MIDI-Scan-Treiber
+                       CONSTANT c_dyn_threshold, 40         ; MIDI-Dynamikschwelle für full click
+                       CONSTANT c_midi_mindyn, 10           ; MIDI-Minimaldynamik langsame Taste
+                       CONSTANT c_time_offset, 06           ; Offset, wird von gemessener Velocity-Zeit abgezogen
+                       CONSTANT c_time_threshold, A0        ; Velocity-Zeitschwelle für full click
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+                       ; Je nach Tastaturumfang sind anzupassen:
+                       CONSTANT c_maxkeys, 60'd             ; längste vorhandene Tastatur (44/49/61) +1
+                       CONSTANT c_maxkeys_plus1, 61'd       ; längste vorhandene Tastatur (44/49/61) +1
+                       CONSTANT c_maxkeys_8x8, 64'd         ; für Matrix-Abfrage
+                       CONSTANT c_maxbasskeys, 25'd         ; Anzahl der Pedal-Tasten an AuxPort PL8
+                       CONSTANT c_midi_firstkey, 24'd
+                       CONSTANT c_midi_lastkey_plus1, 109'd
+                       CONSTANT c_gen_firstkey, 36'd        ; Tonumfang INPUT MIDI-Notennummern
+                       CONSTANT c_gen_lastkey_plus1, 97'd   ; 96+1 wg. COMPARE
+                       CONSTANT c_midi_offset, 36'd         ; Offset zu unterster MIDI-Note "C" bei 5 Oktaven (default 36)
+                       CONSTANT c_scankey_delay, 24'd       ; Delay pro Taste für 500 µs Scandurchlauf in SYNC-Ticks (20,833 µs)
+                       ;
+                       ;
+                       ; ##############################################################################
+                       ;
+                       ;    ### #     #  #####  #       #     # ######  #######
+                       ;     #  ##    # #     # #       #     # #     # #
+                       ;     #  # #   # #       #       #     # #     # #
+                       ;     #  #  #  # #       #       #     # #     # #####
+                       ;     #  #   # # #       #       #     # #     # #
+                       ;     #  #    ## #     # #       #     # #     # #
+                       ;    ### #     #  #####  #######  #####  ######  #######
+                       ;
+                       ; ##############################################################################
+                       ;
+                       INCLUDE "registers.psm"
+                       INCLUDE "init.psm"
+                       INCLUDE "switches.psm"               ; Fußschalter einlesen und verarbeiten
+                       ; INCLUDE "states.psm"               ; Zustandsautomaten für Tastenverarbeitung
+                       INCLUDE "states_dyntable.psm"        ; Zustandsautomaten für Tastenverarbeitung, mit BRAM-Dynamiktabelle
+                       INCLUDE "events_mpx.psm"             ; Event-Loop für MPX-RAM Verarbeitung
+                       INCLUDE "timers.psm"                 ; Timer-Routinen für Zustandsautomaten
+                       INCLUDE "midi_io.psm"                ; MIDI-Subroutinen für MIDI-Empfang
+                       ;
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ;    #     #    #    ### #     #
+                       ;    ##   ##   # #    #  ##    #
+                       ;    # # # #  #   #   #  # #   #
+                       ;    #  #  # #     #  #  #  #  #
+                       ;    #     # #######  #  #   # #
+                       ;    #     # #     #  #  #    ##
+                       ;    #     # #     # ### #     #
+                       ;
+                       ; ###############################################################################
+                       ;
+           cold_start: 
+                       ; Einsprungpunkt nach Laden des Scan Cores
+                       DISABLE INTERRUPT
+                       CALL port_init
+                       CALL scan_init
+                       ;
+            main_loop: 
+                       ; MIDI hat Timing-mäßig Vorrang vor eigener Tastatur,
+                       ; um Buffer-Überläufe zu verhindern
+                       CALL midi_rx_check                   ; MIDI-Daten empfangen? - ca. 1,7 µs
+                       ; auf Scan-Freigabe durch Timer warten
+                       INPUT s0, SCANTIMER_ZERO             ; auf Scan-Freigabe warten
+                       COMPARE s0, 00                       ; Scan-Timer abgelaufen?
+                       JUMP Z, main_loop
+                       CALL scantimer_start                 ; Scan-Timer neu starten
+                       ; Tastenzustand aller Manuale ermitteln und behandeln
+                       ; Zeitbedarf ca. 220 µs für Manuale, plus 40 µs für Pedal
+                       CALL local_scan_presets
+                       CALL local_scan_keybds
+                       CALL local_scan_pedal
+                       ;
+                       CALL pulse_test_on                   ; TEST auf SCANPIO6
+                       ; Zeitbedarf für das gesamte Handling 137 µs
+                       CALL scan_config                     ; Parameter-Änderungen? - ca. 3,4µs
+                       CALL handle_sustain_sw               ; Sustain/Sostenuto-Eingangspins
+                       CALL update_noisetimers              ; alle Noise-Timer updaten - ca. 26 µs, in 1 ms Abstand
+                       ; CALL active_sensing                   ; ca. 1,3 µs
+                       CALL midi_rx_check                   ; MIDI-Daten empfangen? - ca. 1,7 µs
+                       CALL event_handling                  ; Tasten auswerten, ca. 106 µs
+                       CALL pulse_test_off                  ; TEST auf SCANPIO6
+                       ;
+                       JUMP main_loop
+                       ;
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ;    ######  ####### ######  #######
+                       ;    #     # #     # #     #    #
+                       ;    #     # #     # #     #    #
+                       ;    ######  #     # ######     #
+                       ;    #       #     # #   #      #
+                       ;    #       #     # #    #     #
+                       ;    #       ####### #     #    #
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ; Scan Port Initialisierung und Hilfsroutinen
+                       ;
+                       ; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; FATAR SCAN 61 (neu):
+                       ; T DRIVE,   SCANPIO1..3 (D0..D2) - Key-Select innerhalb Gruppe, 0..7
+                       ; SR CLK,    SCANPIO4 (D3)
+                       ; SR LOAD,   SCANPIO5 (D4) - Gruppen-SR, 2x/3x 74HC166
+                       ; TEST,      SCANPIO6 (D5)
+                       ; UPPER Q,   SCANPIO7 (D6)
+                       ; LOWER Q,   SCANPIN8 (D7)
+                       ; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; PEDAL SR 4014:
+                       ; SR CLK 4014      AUXPIO1 (D0)
+                       ; SR Load 4014     AUXPIO2 (D1)
+                       ; Shift Out Upper  AUXPIO3 (D2)
+                       ; Shift Out Lower  AUXPIO4 (D3)
+                       ; Shift Out Pedal  AUXPIO5 (D4)
+                       ; Timing-Debug     AUXPIO6 (D5)
+                       ; +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+                       ; Hilfsroutinen: Zubehör für Scan-Routinen, Initialisierungen
+                       ;
+            port_init: 
+                       ; Scan-Ports initialisieren
+                       LOAD s0, 3F                          ; für Fatar61-Interface
+                       OUTPUT s0, SCANPORT_DDR
+                       LOAD s0, 23                          ; für Bass/Aux-Interface, Bit 5 (AUXPIO6) für Timing-Debug
+                       OUTPUT s0, AUXPORT_DDR
+                       LOAD s0, 00                          ; Sustainpedal, alles Eingänge
+                       OUTPUT s0, SWITCHPORT_DDR
+                       RETURN 
+                       ;
+           pulse_test: 
+                       CALL pulse_test_on                   ; Test für Timing-Analyse
+                       CALL delay_600ns
+       pulse_test_off: 
+                       LOAD s0, 00
+                       OUTPUT s0, SCANPIO6                  ; Test für Timing-Analyse
+                       RETURN 
+        pulse_test_on: 
+                       LOAD s0, 01
+                       OUTPUT s0, SCANPIO6                  ; Test für Timing-Analyse
+                       RETURN 
+                       ;
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ;     ######  ####### ######     #    #
+                       ;     #     # #       #     #   # #   #
+                       ;     #     # #       #     #  #   #  #
+                       ;     ######  #####   #     # #     # #
+                       ;     #       #       #     # ####### #
+                       ;     #       #       #     # #     # #
+                       ;     #       ####### ######  #     # #######
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ; ------------------------------------------------------------------------------
+                       ; PEDAL SR 4014:
+                       ; SR CLK 4014      AUXPIO1 (D0)
+                       ; SR Load 4014     AUXPIO2 (D1)
+                       ; Shift Out Upper  AUXPIO3 (D2)
+                       ; Shift Out Lower  AUXPIO4 (D3)
+                       ; Shift Out Pedal  AUXPIO5 (D4)
+                       ; ------------------------------------------------------------------------------
+                       ;
+                       ; Pedal-Loop, ca. 40 µs mit 160 ns Impulsen
+                       ; Pedal-SR wird jetzt grundsätzlich getrennt abgefragt, ca. 40 µs
+                       ;
+    local_sr4014_load: 
+                       ; SR-Register übernehmen (synchron), s5_scan_key und sA_matrix_key auf 0
+                       ; Am SR-Ausgang Q8 erscheint die unterste Taste (C)
+                       LOAD s0, 01
+                       OUTPUT s0, AUXPIO2                   ; SR-Load Enable
+                       LOAD s0, s0                          ; Setup-Zeit für SR-Load
+                       LOAD s0, s0                          ; 1 Befehl/Taktzyklus = 40,7 ns
+                       LOAD s0, s0                          ; NOPs für 160ns Setup (typ. 90ns)
+                       OUTPUT s0, AUXPIO1                   ; SR-Clk-Impuls für SR-Load
+                       LOAD s5_scan_key, 00                 ; s5_scan_key auf 0
+                       LOAD s0, s0                          ; NOPs für 160ns Impuls (typ. 90ns)
+                       LOAD s0, 00
+                       OUTPUT s0, AUXPIO1
+                       OUTPUT s0, AUXPIO2
+                       RETURN 
+                       ; in s0 ist jetzt 00
+                       ;
+     local_scan_pedal: 
+                       FETCH s0, s_split_on
+                       AND s0, 03
+                       JUMP Z, local_scan_pedal_0           ; Split OFF, Pedal abfragen!
+                       FETCH s0, s_splitmode
+                       COMPARE s0, 00
+                       RETURN Z                             ; 0 = Pedal to Lower, kein Pedal abfragen
+                       COMPARE s0, 02
+                       RETURN Z                             ; 2 = Pedal to Upper, kein Pedal abfragen
+                       COMPARE s0, 05
+                       RETURN Z                             ; 5 = Add Pedal to Lower, kein Pedal abfragen
+                       ; bei anderen Split-Modes Pedal abfragen
+   local_scan_pedal_0: 
+                       CALL local_sr4014_load               ; SR parallel laden, kehrt mit s0 = 00 zurück
+ local_scanloop_pedal: 
+                       INPUT s3_keystatus, AUXPIO5          ; Pedalkontakt
+                       XOR s3_keystatus, 01                 ; ist jetzt 0 oder 1, keine Dynamik!
+                       LOAD s1, s3_keystatus
+                       SL0 s1                               ; 2. Kontakt simulieren
+                       OR s3_keystatus, s1
+                       CALL local_handle_ped
+                       ; SR-Daten weiterschieben, beginnend mit unterster Taste
+                       ; erhöht s5_scan_key um 1
+                       LOAD s0, 01
+                       OUTPUT s0, AUXPIO1                   ; SR-Clk-Impuls für SR-Load
+                       ADD s5_scan_key, 01                  ; nächste Pedal-Taste
+                       LOAD s0, s0                          ; NOPs für 160ns Impuls (typ. 90ns)
+                       LOAD s0, 00
+                       OUTPUT s0, AUXPIO1
+                       ;
+                       COMPARE s5_scan_key, c_maxbasskeys
+                       JUMP NZ, local_scanloop_pedal
+                       RETURN 
+                       ;
+     local_handle_ped: ; Für nicht gesplittetes Pedal
+                       AND s3_keystatus, 01
+                       LOAD s9_manual_select, 02            ; für MIDI OUTPUT Lower
+                       FETCH s0, s_transpose
+                       ADD s0, s5_scan_key
+                       STORE s0, s_local_key                ; Für Event-MPX und MIDI Send
+                       ; weiter mit State Machine und dann zurück
+                       ;
+                       ; -------------------------- Mealy-Zustandsautomat -----------------------------
+                       ;
+                       ; State in s2: c_state_idle_pedal, c_state_on_pedal
+                       ;
+                       ; ------------------------------------------------------------------------------
+                       ;
+                       ; Pedal hat nur 1 Bit im RAM, deshalb andere State Machine
+                       CALL local_rd_state_s2               ; Timer-State dieser Taste in s2
+                       ; auf derzeitigen Zustand verteilen
+                       COMPARE s2, c_state_on_pedal
+                       JUMP Z, local_was_on_pedal           ; war vorher ON
+                       ;
+ local_was_idle_pedal: ; war vorher OFF
+                       COMPARE s3_keystatus, c_pedal_idle   ; Hat Taste mindestens ersten Kontakt erreicht?
+                       RETURN Z                             ; war bereits in Ruhestellung, nichts machen
+   local_new_on_pedal: 
+                       LOAD s2, c_state_on_pedal
+                       CALL local_wr_state_s2               ; neuer Timer-State: c_state_on_pedal
+                       LOAD s3_keystatus, c_pedal_on
+                       CALL local_wr_s3_keystat             ; neuer Kontakt: ON
+                       LOAD s0, 41                          ; Pedal ON senden
+                       STORE s0, s_local_dyn
+                       JUMP local_states_out                ; Eintragen, MIDI ON senden und Ende
+                       ;
+   local_was_on_pedal: ; war vorher ON
+                       COMPARE s3_keystatus, c_pedal_on     ; Taste noch in ON-Stellung?
+                       RETURN Z                             ; war bereits eingeschaltet, nichts machen
+  local_new_off_pedal: 
+                       LOAD s2, c_state_idle_pedal
+                       CALL local_wr_state_s2               ; neuer Timer-State: c_state_idle_pedal
+                       LOAD s3_keystatus, c_pedal_idle
+                       CALL local_wr_s3_keystat             ; neuer Kontakt: ON
+                       LOAD s0, 00                          ; Pedal OFF senden
+                       STORE s0, s_local_dyn
+                       JUMP local_states_out                ; Eintragen, MIDI OFF senden und Ende
+                       ;
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ;     #    # ####### #     # ######  ######
+                       ;     #   #  #        #   #  #     # #     #
+                       ;     #  #   #         # #   #     # #     #
+                       ;     ###    #####      #    ######  #     #
+                       ;     #  #   #          #    #     # #     #
+                       ;     #   #  #          #    #     # #     #
+                       ;     #    # #######    #    ######  ######
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ; NEUE Manual-Loops, Zeitbedarf ca. 125 µs bei 600 ns Einschwingeit pro Gruppe
+                       ; ------------------------------------------------------------------------------
+                       ; Neue, schnellere Scan-Abfrage wg. Trägheit der Dioden-Matrix
+                       ; Vorher (#46): Wartezeit nach jeder einzelnen Taste nötig wg. Settle Time der Diodenmatrix
+                       ;
+                       ; Problem ist, dass die abgefragten Tasten wg. der alten Matrix dann nicht aufeinander folgen,
+                       ; sondern im Abstand von 8 Tasten. Register s5_scan_key wird deshalb getrennt mitgeführt.
+                       ;
+                       ; ------------------------------------------------------------------------------
+                       ; Manual-Tastenzustände holen, in s3_keystatus und sB_keystatus_lwr
+                       ; 0 = Taste AUS
+                       ; 1 = Kontakt 1. Schließer
+                       ; 2 = Kontakt 2. Schließer
+                       ; 3 = beide Kontakte, Taste voll gedrückt
+                       ; ------------------------------------------------------------------------------
+                       ; FATAR SCAN 1-61 (neu):
+                       ; T DRIVE,   SCANPIO1..3 (D0..D2) - Key-Select innerhalb Gruppe, 0..7
+                       ; SR CLK,    SCANPIO4 (D3)
+                       ; SR LOAD,   SCANPIO5 (D4) - Gruppen-SR, 2x/3x 74HC166
+                       ; TEST,      SCANPIO6 (D5)
+                       ; UPPER Q,   SCANPIO7 (D6)
+                       ; LOWER Q,   SCANPIN8 (D7)
+                       ; ------------------------------------------------------------------------------
+                       ;
+    pulse_srclk_fatar: ; hier für FATAR 1-73 (neu)
+                       LOAD s0, 01
+                       OUTPUT s0, SCANPIO4                  ; SR CLK auf 1
+                       LOAD s0, 00
+                       OUTPUT s0, SCANPIO4                  ; SR CLK auf 0
+                       RETURN 
+                       ; 5 Clk-Vorimpulse erzeugen
+       prepulse_srclk: ; hier für Pulse 6105W
+                       LOAD s1, 06
+  prepulse_srclk_loop: 
+                       LOAD s0, 01
+                       OUTPUT s0, SCANPIO4                  ; SR CLK auf 1
+                       LOAD s0, 00
+                       OUTPUT s0, SCANPIO4                  ; SR CLK auf 0
+                       SUB s1, 01
+                       JUMP NZ, prepulse_srclk_loop
+                       RETURN 
+                       ;
+    prepulse_srclk_sA: 
+                       LOAD s1, sA_matrix_key
+                       JUMP prepulse_srclk_loop
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+   local_scan_presets: ; Anfangszustand für Tastenabfrage, SR-Register zurücksetzen
+                       LOAD s0, 07                          ; s3_keystatus aller Tasten in s_keypressed_acc sammeln (OR'ed)
+                       STORE s0, s_tdrive
+                       LOAD s5_scan_key, 11'd               ; s5_scan_key auf 12. Taste, fängt mit 0 oben (B) an
+                       LOAD sA_matrix_key, 02               ; hier Zähler für Impulse
+local_preset_sr_pulse: 
+                       FETCH s0, s_tdrive
+                       COMPARE s0, 00
+                       JUMP NZ, local_scan_presets_0
+                       ADD sA_matrix_key, 02                ; Anzahl der Pre-Pulses erhöhen für MK2 und MK3
+ local_scan_presets_0: 
+                       LOAD s1, s0
+                       XOR s1, 03                           ; BUGFIX für Rev. 02!
+                       OUTPUT s1, SCANPORT                  ; T Drive setzen, Bit 0 und 1 invertiert
+                       ADD s0, 01
+                       AND s0, 07                           ; nur 3 Bits für T-Drive                       ADD s0, 01
+                       STORE s0, s_tdrive                   ; T-Drive-Wert für nächsten Durchlauf
+                       ; OUTPUT s0, SCANPORT                ; T Drive setzen
+                       CALL delay_600ns                     ; s0 ist jetzt 00
+                       CALL pulse_srclk_fatar               ; SR lesen, MK0 liegt an
+                       LOAD s1, 01
+                       OUTPUT s1, SCANPIO5                  ; SR LOAD wieder auf 1 = SHIFT, falls vorher LOAD
+                       CALL prepulse_srclk_sA
+                       ; an SCANPIO7 und SCANPIN8 liegen jetzt die ersten Tastenzustände an
+                       ; Tastenzustand holen, s3_keystatus und sB_keystatus_lwr
+                       INPUT s3_keystatus, SCANPIO7         ; MK Upper
+                       INPUT sB_keystatus_lwr, SCANPIN8     ; MK Lower
+                       CALL pulse_srclk_fatar               ; SR lesen, MK0 liegt an
+                       ;
+                       ; Tastenzustand jetzt in s3_keystatus und sB_keystatus_lwr,
+                       ; kann jetzt ausgewertet werden
+                       ;
+                       LOAD s9_manual_select, 00            ; für MIDI OUTPUT Upper
+                       CALL local_rd_pr_s0                  ; vorherigen Kontaktstatus der Taste in s0
+                       COMPARE s0, s3_keystatus             ; hat sich der Kontaktstatus geändert? (z.B. von 0 auf 1,
+                       CALL NZ, local_pr_upr_changed        ; wenn ja, Handler für geänderten Kontaktstatus aufrufen
+                       ;
+                       LOAD s9_manual_select, 01            ; für MIDI OUTPUT Lower
+                       CALL local_rd_pr_s0                  ; vorherigen Kontaktstatus der Taste in s0
+                       COMPARE s0, sB_keystatus_lwr         ; hat sich der Kontaktstatus geändert? (z.B. von 0 auf 1,
+                       CALL NZ, local_pr_lwr_changed        ; wenn ja, Handler für geänderten Kontaktstatus aufrufen
+                       ;
+                       SUB s5_scan_key, 01                  ; Letzte Taste erreicht?
+                       JUMP NC, local_preset_sr_pulse
+                       RETURN 
+                       ;
+ local_pr_upr_changed: 
+                       LOAD s1, s3_keystatus
+                       CALL local_send_preset
+                       LOAD s1, s3_keystatus
+                       JUMP local_wr_pr_s1
+ local_pr_lwr_changed: 
+                       LOAD s1, sB_keystatus_lwr
+                       CALL local_send_preset
+                       LOAD s1, sB_keystatus_lwr
+                       JUMP local_wr_pr_s1
+                       ;
+    local_send_preset: 
+                       ; 3 Bytes werden parallel übertragen, deshalb Umsetzung auf Controller für AVR-SPI
+                       FETCH s0, s_midich
+                       ADD s0, C0                           ; Program Change Statusbyte
+                       ADD s0, s9_manual_select
+                       OUTPUT s0, MIDI_CMD
+                       OUTPUT s5_scan_key, MIDI_DB1
+                       OUTPUT s1, MIDI_DB2
+                       CALL midi_strobe_avr                 ; an AVR senden, benutzt s0
+                       RETURN 
+                       ;
+       local_wr_pr_s1: ; Taste in s5_scan_key, zu schreibende Daten in s3_keystatus, sB_keystatus_lwr
+                       LOAD s6_idx_ptr, c_page_presetkeys
+                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
+                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
+                       OUTPUT s1, RAM_WRDATA                ; zu schreibende Daten
+                       LOAD s6_idx_ptr, UPPER_STROBE
+                       ADD s6_idx_ptr, s9_manual_select
+                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
+                       RETURN 
+                       ;
+       local_rd_pr_s0: ; Taste in s5_scan_key, gelesene Daten später in s0
+                       LOAD s6_idx_ptr, c_page_presetkeys
+                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
+                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
+                       LOAD s6_idx_ptr, RD_UPPER
+                       ADD s6_idx_ptr, s9_manual_select
+                       INPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Read
+                       RETURN                               ; Zustand in s0
+                       ;
+                       ;
+                       ;
+    local_scan_keybds: ; Anfangszustand für Tastenabfrage, SR-Register zurücksetzen
+                       LOAD s0, 00                          ; s3_keystatus aller Tasten in s_keypressed_acc sammeln (OR'ed)
+                       STORE s0, s_keypressed_acc
+                       STORE s0, s_tdrive
+                       LOAD s5_scan_key, 61'd               ; s5_scan_key auf 61 und sA_matrix_key auf 0
+                       LOAD sA_matrix_key, 00
+  local_load_sr_pulse: 
+                       FETCH s0, s_tdrive
+                       AND s0, 07                           ; nur 3 Bits für T-Drive
+                       LOAD s1, s0
+                       XOR s1, 03                           ; BUGFIX für Rev. 02!
+                       OUTPUT s1, SCANPORT                  ; T Drive setzen, Bit 0 und 1 invertiert
+                       ; OUTPUT s0, SCANPORT                ; T Drive setzen
+                       ADD s0, 01
+                       STORE s0, s_tdrive                   ; T-Drive-Wert für nächsten Durchlauf
+                       CALL delay_600ns                     ; s0 ist jetzt 00
+                       CALL pulse_srclk_fatar               ; SR lesen
+                       LOAD s1, 01
+                       OUTPUT s1, SCANPIO5                  ; SR LOAD wieder auf 1 = SHIFT, falls vorher LOAD
+                       CALL prepulse_srclk                  ; nur bei Pulse6105W
+                       JUMP local_keys_skip0                ; Lade-Impuls zählt als erster SR-Shift, deshalb direkt zu Loop7 springen
+     local_keys_loop8: 
+                       CALL pulse_srclk_fatar               ; SR weiterschalten
+     local_keys_skip0: 
+                       ; sA_matrix_key inkrementieren, bis alle Tasten abgefragt sind
+                       ;
+                       ; an SCANPIO7 und SCANPIN8 liegen jetzt die ersten Tastenzustände an
+                       ; Tastenzustand holen, s3_keystatus und sB_keystatus_lwr
+                       INPUT s3_keystatus, SCANPIO7         ; MK Upper
+                       INPUT sB_keystatus_lwr, SCANPIN8     ; MK Lower
+                       ;
+                       SL0 s3_keystatus                     ; auf Bit 1 schieben
+                       SL0 sB_keystatus_lwr
+                       ;
+                       CALL pulse_srclk_fatar               ; SR weiterschalten
+                       ;
+                       FETCH s0, s_keypressed_acc
+                       OR s0, s3_keystatus                  ; für wait_keyb_release, Settle Time nutzen
+                       OR s0, sB_keystatus_lwr
+                       STORE s0, s_keypressed_acc
+                       ;
+                       INPUT s0, SCANPIO7                   ; BR Upper
+                       OR s3_keystatus, s0
+                       INPUT s0, SCANPIN8                   ; BR Lower
+                       OR sB_keystatus_lwr, s0
+                       ;
+                       AND s5_scan_key, 3F                  ; nur 6 Bits für 64 Tasten
+                       ;
+                       ; Tastenzustand jetzt in s3_keystatus und sB_keystatus_lwr,
+                       ; kann jetzt ausgewertet werden
+                       ;
+                       ; ist überhaupt etwas zu tun?
+                       LOAD s1, s3_keystatus                ; alle Kontakte in einem Byte zusammenfassen, um nur einmal vergleichen zu müssen
+                       SL0 s1
+                       SL0 s1
+                       OR s1, sB_keystatus_lwr
+                       CALL local_rd_keycont_s0             ; vorherigen Kontaktstatus der Taste in s0
+                       OR s0, s1
+                       COMPARE s0, 00                       ; keine Kontakte, vorher auch keine Kontakte?
+                       JUMP Z, local_keys_skip_1            ; keine Kontaktänderung, nächste Taste
+                       CALL local_wr_keycont_s1             ; Kontaktänderung, neuen Status in RAM schreiben
+                       COMPARE s5_scan_key, c_maxkeys_plus1
+                       CALL C, local_handle_keybds
+    local_keys_skip_1: 
+                       ; s5_scan_key läuft gruppenweise von 0..63 insgesamt mit 8er/1er Inkrement
+                       ADD s5_scan_key, 08                  ; Gruppenweises Inkrement +8
+                       ;
+                       ADD sA_matrix_key, 01
+                       COMPARE sA_matrix_key, c_maxkeys_8x8 ; Alle Tasten abgefragt?
+                       RETURN Z
+                       ;
+                       TEST sA_matrix_key, 07               ; alle 8 Tasten der Gruppe abgefragt?
+                       ; nach 8 Tasten der T-Gruppe das SR neu einlesen
+                       JUMP NZ, local_keys_loop8
+                       ADD s5_scan_key, 01
+                       JUMP local_load_sr_pulse
+                       ;
+  local_wr_keycont_s1: ; Taste in s5_scan_key, zu schreibende Daten in s3_keystatus, sB_keystatus_lwr
+                       LOAD s6_idx_ptr, c_page_keycontacts
+                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
+                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
+                       OUTPUT s1, RAM_WRDATA                ; zu schreibende Daten
+                       LOAD s6_idx_ptr, c_strobe_mask
+                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
+                       RETURN 
+                       ;
+  local_rd_keycont_s0: ; Taste in s5_scan_key, gelesene Daten später in s0
+                       LOAD s6_idx_ptr, c_page_keycontacts
+                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
+                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
+                       LOAD s6_idx_ptr, c_read_mask
+                       INPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Read
+                       RETURN                               ; Zustand in s0
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ;     #####  ######  #       ### #######
+                       ;    #     # #     # #        #     #
+                       ;    #       #     # #        #     #
+                       ;     #####  ######  #        #     #
+                       ;          # #       #        #     #
+                       ;    #     # #       #        #     #
+                       ;     #####  #       ####### ###    #
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ; Split Mode:
+                       ; 0 = Pedal to Lower
+                       ; 1 = Lower to Upper
+                       ; 2 = Pedal to Upper
+                       ; 3 = Lower to Upper +1 Oktave
+                       ; 4 = Lower to Upper +2 Oktaven
+                       ; 5 = Add Pedal to Lower
+                       ;
+  local_handle_keybds: 
+                       FETCH s0, s_split_on
+                       AND s0, 03
+                       JUMP Z, local_handle_nosplit         ; Split OFF
+                       FETCH s0, s_splitmode
+                       COMPARE s0, 00
+                       JUMP Z, local_handle_split_0         ; 0 = Pedal to Lower
+                       COMPARE s0, 01
+                       JUMP Z, local_handle_split_1         ; 1 = Lower to Upper
+                       COMPARE s0, 02
+                       JUMP Z, local_handle_split_2         ; 2 = Pedal to Upper
+                       COMPARE s0, 03
+                       JUMP Z, local_handle_split_3         ; 3 = Lower to Upper +1 Oktave
+                       COMPARE s0, 04
+                       JUMP Z, local_handle_split_4         ; 4 = Lower to Upper +2 Oktaven
+                       JUMP local_handle_split_5            ; 5 = Add Pedal to Lower
+                       ;
+ local_handle_nosplit: 
+                       CALL local_wr_upr
+                       LOAD s3_keystatus, sB_keystatus_lwr  ; sB_keystatus_lwr für Lower benutzen
+                       JUMP local_wr_lwr
+                       ;
+ local_handle_split_0: ; 0 = Pedal to Lower
+                       CALL local_wr_upr
+                       LOAD s3_keystatus, sB_keystatus_lwr  ; sB_keystatus_lwr für Lower benutzen
+                       FETCH s0, s_splitpoint
+                       COMPARE s5_scan_key, s0
+                       JUMP NC, local_wr_lwr                ; JUMP wenn s5_scan_key > splitpoint
+                       COMPARE s5_scan_key, c_maxbasskeys
+                       RETURN NC                            ; wenn s5_scan_key > c_maxbasskeys
+                       ; sB_keystatus_lwr für Pedal benutzen
+                       JUMP local_wr_ped_split
+                       ;
+ local_handle_split_1: ; 1 = Lower to Upper
+                       FETCH s0, s_splitpoint
+                       COMPARE s5_scan_key, s0
+                       JUMP NC, local_wr_upr                ; JUMP wenn s5_scan_key > splitpoint
+                       ; Mode 1, Upper manual key auf Lower schreiben
+                       ; s3_keystatus für Lower benutzen
+                       LOAD s8_msb, 00                      ; Octave Transpose 0
+                       JUMP local_wr_lwr_add_s8
+                       ;
+ local_handle_split_2: ; 2 = Pedal to Upper
+                       FETCH s0, s_splitpoint
+                       COMPARE s5_scan_key, s0
+                       JUMP NC, local_wr_upr                ; JUMP wenn s5_scan_key > splitpoint
+                       COMPARE s5_scan_key, c_maxbasskeys
+                       RETURN NC                            ; wenn s5_scan_key > c_maxbasskeys
+                       ; s3_keystatus (Upper) für Pedal benutzen
+                       JUMP local_wr_ped_split
+                       ;
+ local_handle_split_3: ; 3 = Lower to Upper +1 Oktaven
+                       FETCH s0, s_splitpoint
+                       COMPARE s5_scan_key, s0
+                       JUMP NC, local_wr_upr                ; JUMP wenn s5_scan_key > splitpoint
+                       ; wie Mode 1, Upper manual key auf Lower schreiben
+                       LOAD s8_msb, 12'd                    ; + 1 Oktave
+                       JUMP local_wr_lwr_add_s8
+                       ;
+ local_handle_split_4: ; 4 = Lower to Upper +2 Oktaven
+                       FETCH s0, s_splitpoint
+                       COMPARE s5_scan_key, s0
+                       JUMP NC, local_wr_upr                ; JUMP wenn s5_scan_key > splitpoint
+                       ; wie Mode 1, Upper manual key auf Lower schreiben
+                       LOAD s8_msb, 24'd                    ; + 2 Oktaven
+                       JUMP local_wr_lwr_add_s8
+                       ;
+ local_handle_split_5: ; 5 = Add Pedal to Lower
+                       CALL local_wr_upr
+                       LOAD s3_keystatus, sB_keystatus_lwr  ; sB_keystatus_lwr für Lower benutzen
+                       CALL local_wr_lwr
+                       FETCH s0, s_splitpoint
+                       COMPARE s5_scan_key, s0
+                       RETURN NC
+                       ; sB_keystatus_lwr für Pedal benutzen
+                       JUMP local_wr_ped_split              ; Lower key auch auf Pedal schreiben
+                       ;
+                       ; -------------------------------- UPPER/LOWER ---------------------------------
+                       ;
+         local_wr_upr: 
+                       LOAD s9_manual_select, 00            ; Upper ausgewählt
+                       FETCH s0, s_transpose
+                       ADD s0, s5_scan_key
+                       ; Falls Bits 4 in SPI_SPLITON gesetzt, Oktav-Shift ausführen (MAG Organs 4-Oktaven-Modell)
+                       FETCH s1, s_split_on
+                       TEST s1, 10                          ; AND -> Z-Flag, Bit 4
+                       CALL NZ, local_sub12_s0              ; MAG Mini, Octave Shift?
+                       STORE s0, s_local_key                ; Für Event-MPX und MIDI Send
+                       JUMP local_states                    ; und zurück
+                       ;
+         local_wr_lwr: 
+                       LOAD s8_msb, 00                      ; Octave Transpose 0
+  local_wr_lwr_add_s8: 
+                       LOAD s9_manual_select, 01            ; Lower ausgewählt
+                       FETCH s0, s_transpose
+                       ADD s0, s5_scan_key
+                       ; Falls Bit 5 in SPI_SPLITON gesetzt, Oktav-Shift ausführen (MAG Organs 4-Oktaven-Modell)
+                       FETCH s1, s_split_on
+                       TEST s1, 20                          ; AND -> Z-Flag, Bit 5
+                       CALL NZ, local_sub12_s0              ; MAG Mini, Octave Shift?
+                       ADD s0, s8_msb
+                       STORE s0, s_local_key                ; Für Event-MPX und MIDI Send
+                       JUMP local_states                    ; und zurück
+                       ;
+       local_sub12_s0: ; Shift Upper -1 Oktave auf s0
+                       SUB s0, 12'd                         ; transp. Key in s0'
+                       RETURN 
+                       ;
+                       ; ------------------------------ PEDAL SPLIT ------------------------------------
+                       ;
+   local_wr_ped_split: ; Einsprung für gesplittetes Pedal
+                       COMPARE s5_scan_key, c_maxbasskeys   ; wenn s5_scan_key > c_maxbasskeys
+                       RETURN NC
+                       LOAD s0, s3_keystatus
+                       SL0 s0
+                       OR s3_keystatus, s0
+                       JUMP local_handle_ped
