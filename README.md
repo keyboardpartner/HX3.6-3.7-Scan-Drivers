@@ -13,6 +13,7 @@ Schematics of scan boards to be found on http://updates.keyboardpartner.de/Files
 TODO: Full testing of XB2/XB5 scan driver.
 
 ### Version Info
+* 03.03.2026 #52 Neue Version für Fatar-Tastatur mit 73 Tasten und invertierter Preset-Oktave
 * 26.02.2026 #52 Für FPGA ab #23022024, mit ladbarer Dynamik-Tabelle, siehe *states_dyntable.psm*, XB2/XB5 ebenfalls mit Support für Dynamik-Tabelle (vorher rein linear)
 * 27.01.2025 #51 Neues universelles Framework mit *includes*, gemeinsam für alle HX3 Scan Driver
 * 10.12.2025 #49 Support für neues FPGA mit separatem (dritten) SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft

@@ -494,7 +494,9 @@ local_pr_lwr_changed:
                       ADD s0, C0                           ; Program Change Statusbyte
                       ADD s0, s9_manual_select
                       OUTPUT s0, MIDI_CMD
-                      OUTPUT s5_scan_key, MIDI_DB1
+                      LOAD s0, 11'd                        ; obere B-Taste = Preset 0
+                      SUB s0, s5_scan_key
+                      OUTPUT s0, MIDI_DB1
                       ; Tastenzustand in s1, 3. Byte nicht MIDI-konform, aber für AVR-SPI-Controller als Trigger-Byte für Preset ON/OFF gedacht
                       OUTPUT s1, MIDI_DB2
                       CALL midi_strobe_avr                 ; an AVR senden, benutzt s0
