@@ -110,7 +110,7 @@
                       CONSTANT SWITCHPORT_DDR, 29          ; Switches Port Data Direction
                       ; Output ports
                       CONSTANT c_strobe_mask, 20           ; für indirektes Schreiben
-                      CONSTANT BASE_WRITE_STRB, 20            ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
+                      CONSTANT BASE_WRITE, 20              ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
                       CONSTANT UPPER_STROBE, 20            ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
                       CONSTANT LOWER_STROBE, 21            ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Lower (1 Byte)
                       CONSTANT PEDAL_STROBE, 22            ; Schreibzugriff erzeugt Write für Pedal-Bits (2 Bits)
@@ -155,7 +155,7 @@
                       CONSTANT FEATURE_SPI_FLAG, 30        ; war "0000000" & spiflag, jetzt "0000001" & spiflag wenn neues FPGA
                       CONSTANT TX_STATUS, 31               ; Bit 0 = TX DIN (1) voll, Bit 1 = TX SAM (2) voll
                       CONSTANT c_read_mask, 34             ; für indirektes Lesen
-                      CONSTANT BASE_READ_STRB, 34             ; für indirektes Lesen
+                      CONSTANT BASE_READ, 34               ; für indirektes Lesen
                       CONSTANT RD_UPPER, 34                ; Upper-Byte vom MPX-RAM
                       CONSTANT RD_LOWER, 35                ; Lower-Byte vom MPX-RAM
                       CONSTANT RD_PEDAL, 36                ; Pedal-Bits vom MPX-RAM (1:0)
@@ -213,7 +213,8 @@
                       CONSTANT s_keystatus_lower, 11
                       CONSTANT s_keystatus_pedal, 12
                       ;
-                      CONSTANT s_tdrive , 20'd               ; für Tastenabfrage, aktueller T-Drive-Wert, 0..7 für Fatar und Pulse
+                      CONSTANT s_tdrive , 20'd             ; für Tastenabfrage, aktueller T-Drive-Wert, 0..7 für Fatar und Pulse
+                      CONSTANT s_mkbr_count , 21'd         ; für Tastenabfrage, aktuelles Bitpaar
                       ;
                       CONSTANT s_keycount_upper, 32'd
                       CONSTANT s_keycount_lower, 33'd

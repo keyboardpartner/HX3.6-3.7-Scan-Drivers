@@ -6,7 +6,7 @@
 
 These are various scan driver sources for HX3.6 and HX3.7 mainboards, to be compiled with PicoBlaze Assembler KCPSM6 from Ken Chapman. All drivers for velocity-sensitive keybeds (Fatar, Pulse, XB2/XB5) now come with an improved dynamic scaling using a dedicated time-to-velocity table. This table is created by the main MCU and automatically uploaded to the FPGA sound engine. Due to new velocity table, these drivers are **no longer compatible** with HX3.5 boards (table RAM does not fit in older FPGA).
 
-Repository contains KCPSM6 assambler and HEX converter (runs on Windows OS) for creation of *scan.dat* files; simply use the batch files *make_xxx.bat* to execute. The batch file will compile the *.psm* source, convert resulting *.hex* file to a *.dat* file suitable for HX3 upload, rename it and re-format the source.
+Repository contains KCPSM6 assembler and HEX converter (runs on Windows OS) for creation of *scan.dat* files; simply use the batch files *make_xxx.bat* to execute. The batch file will compile the *.psm* source, convert resulting *.hex* file to a *.dat* file suitable for HX3 upload, rename it and re-format the source.
 
 Schematics of scan boards to be found on http://updates.keyboardpartner.de/Files/index.php?dir=Schematics
 

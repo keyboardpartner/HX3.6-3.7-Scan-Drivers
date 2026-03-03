@@ -12,7 +12,24 @@
                         ;
                         ; MIDI-Subroutinen für MIDI-Empfang
                         ; Dispatcher stellt fest, ob und was es zu tun gibt
-                        ; wird regelmäßig aus Hauptschleife aufgerufen
+                        ; und wird regelmäßig aus Hauptschleife aufgerufen
+                        ;
+          midi_test_s0: ; Test-Routine, s0 als Controller in zwei Bytes senden (falls >= 128)
+                        LOAD s8_msb, s0
+                        LOAD s7_lsb, s0
+                        SR0 s8_msb
+                        SR0 s8_msb
+                        SR0 s8_msb
+                        SR0 s8_msb
+                        AND s7_lsb, 0F
+                        LOAD s0, B0
+                        CALL midi_tx_s0
+                        LOAD s0, s8_msb
+                        CALL midi_tx_s0
+                        LOAD s0, s7_lsb
+                        CALL midi_tx_s0
+                        RETURN 
+                        ;
                         ;
      midi_rx_writedata: 
                         ; Notenwert und Dynamik abspeichern
