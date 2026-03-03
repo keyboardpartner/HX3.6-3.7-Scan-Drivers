@@ -130,12 +130,13 @@
                       JUMP Z, main_loop
                       CALL scantimer_start                 ; Scan-Timer neu starten
                       ; Tastenzustand aller Manuale ermitteln und behandeln
-                      ; Zeitbedarf ca. 220 µs für Manuale, plus 40 µs für Pedal
+                      ; Zeitbedarf ca. 170 µs für Manuale, plus 40 µs für Pedal
+                      CALL pulse_test_on                   ; TEST auf SCANPIO6
                       CALL local_scan_keybds
                       CALL local_scan_pedal
                       ;
-                      CALL pulse_test_on                   ; TEST auf SCANPIO6
                       ; Zeitbedarf für das gesamte Handling 137 µs
+                      CALL pulse_test_on                   ; TEST auf SCANPIO6
                       CALL scan_config                     ; Parameter-Änderungen? - ca. 3,4µs
                       CALL handle_sustain_sw               ; Sustain/Sostenuto-Eingangspins
                       CALL update_noisetimers              ; alle Noise-Timer updaten - ca. 26 µs, in 1 ms Abstand
@@ -246,8 +247,6 @@
                       ; in s0 ist jetzt 00
                       ;
     local_scan_pedal: 
-                      RETURN                               ; TEST!
-                      ;
                       FETCH s0, s_split_on
                       AND s0, 03
                       JUMP Z, local_scan_pedal_0           ; Split OFF, Pedal abfragen!
