@@ -56,7 +56,7 @@
                         OUTPUT s0, RAM_ADDR
                         ; Dynamik schreiben
                         LOAD s6_idx_ptr, s9_manual_select                ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)                          ; Upper, Lower oder Pedal Strobe
                         ; Umgerechnet in 2 Stufen für Event-Loop
                         LOAD s6_idx_ptr, c_page_latestep
@@ -67,7 +67,7 @@
                         LOAD s8_msb, s0
                         OUTPUT s0, RAM_WRDATA                            ; zu schreibender Step in s0
                         LOAD s6_idx_ptr, s9_manual_select                ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)                          ; Upper, Lower oder Pedal Strobe
                         ; auch für Early-Modus
                         LOAD s6_idx_ptr, c_page_earlystep
@@ -75,7 +75,7 @@
                         LOAD s0, s8_msb                                  ; Step dieser Taste
                         OUTPUT s0, RAM_WRDATA                            ; zu schreibender Step in s0
                         LOAD s6_idx_ptr, s9_manual_select                ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)                          ; Upper, Lower oder Pedal Strobe
                         RETURN 
                         ;

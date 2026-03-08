@@ -16,6 +16,7 @@
                    ; https://www.amd.com/en/products/adaptive-socs-and-fpgas/intellectual-property/picoblaze.html
                    ; https://www1.hs-bremerhaven.de/kmueller/VHDL/PB_Instr_Ref.pdf
                    ;
+                   ; 08.03.2026 #53 vereinfachte State Machine
                    ; 27.01.2025 #51 Neues universelles Framework, hier für MIDI only ohne eigene Tastenabfrage
                    ; 06.01.2026 #50 BUGFIX, Lower Manual war in #49 ohne Funktion
                    ; 10.12.2025 #49 Support für neues FPGA mit separatem SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft
@@ -44,11 +45,13 @@
                    ; Pin 2 = Bit 1 Cancel MIDI Kanal invert., 11 = Cancel Off, 10 = Cancel Upper,
                    ; Pin 1 = Bit 0 Cancel MIDI Kanal invert., 01 = Cancel Lower, 00 = Cancel Pedal
                    ;
-                   CONSTANT c_corerevi, 51              ; Revisionsnummer
+                   CONSTANT c_corerevi, 53              ; Revisionsnummer
                    CONSTANT c_corevers, 63              ; $50=SR4014, $51=Fatar, $52=Opto, $53=MIDI RcvOnly
                    CONSTANT c_corevers_midionly, 63     ; zum Vergleichen im MIDI-Scan-Treiber
                    CONSTANT c_dyn_threshold, 28         ; MIDI-Dynamikschwelle für full click
                    CONSTANT c_midi_mindyn, 10           ; MIDI-Minimaldynamik langsame Taste
+                   CONSTANT c_time_offset, 06           ; Offset, wird von gemessener Velocity-Zeit abgezogen
+                   CONSTANT c_time_threshold, A0        ; Velocity-Zeitschwelle für full click
                    ;
                    ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                    ;

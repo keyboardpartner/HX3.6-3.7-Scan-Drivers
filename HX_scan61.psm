@@ -17,6 +17,7 @@
                       ; https://www.amd.com/en/products/adaptive-socs-and-fpgas/intellectual-property/picoblaze.html
                       ; https://www1.hs-bremerhaven.de/kmueller/VHDL/PB_Instr_Ref.pdf
                       ;
+                      ; 08.03.2026 #53 vereinfachte State Machine
                       ; 27.01.2025 #51 Neues universelles Framework, hier für alle 61-Tasten-Boards mit SR 4014
                       ; 10.12.2025 #49 Support für neues FPGA mit separatem SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft
                       ; 11.07.2025 #47 Neue Organisation der Tastenabfrage mit vertauschter Spalte/Reihe (4017/4024-Zähler), deutlich schneller
@@ -55,9 +56,11 @@
                       ; $60=SR4014, $61=Fatar, $62=Opto, $63=MIDI, $64=OrganScan61, $65=XB2-5, $66=Fatar61 (neu), $67=Fatar73 (neu, mit Presets)
                       CONSTANT c_corevers, 60
                       CONSTANT c_corevers_midionly, 63     ; zum Vergleichen im MIDI-Scan-Treiber für MIDI-IN-Split
-                      CONSTANT c_corerevi, 51              ; Revisionsnummer
+                      CONSTANT c_corerevi, 53              ; Revisionsnummer
                       CONSTANT c_dyn_threshold, 40         ; MIDI-Dynamikschwelle für full click
                       CONSTANT c_midi_mindyn, 10           ; MIDI-Minimaldynamik langsame Taste
+                      CONSTANT c_time_offset, 06           ; Offset, wird von gemessener Velocity-Zeit abgezogen
+                      CONSTANT c_time_threshold, A0        ; Velocity-Zeitschwelle für full click
                       ;
                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
                       ;

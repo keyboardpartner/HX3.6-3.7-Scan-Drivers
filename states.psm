@@ -31,91 +31,63 @@
                         ;
                         ; ------------------------------- State "Idle" ---------------------------------
                         ;
-        local_idle_off:
-                        ; Erstmals Ruhestellung, Dyntimer löschen
-                        LOAD s0, 00
-                        CALL local_wr_dyntimer_s0
-                        LOAD s2, c_state_idle                 ; nächster Timer-State: Idle, OFF gesendet
-                        CALL local_wr_state_s2
-                        JUMP local_wr_s3_keystat              ; aktuellen Zustand für Early Key in RAM speichern
                         ;
             local_idle:
                         COMPARE s3_keystatus, c_key_idle      ; Hat Taste mindestens ersten Kontakt erreicht?
                         RETURN Z                              ; nichts machen
-                        ; JUMP NZ, local_forward              ; wenn ja, in Counting-State gehen
+                        ; JUMP local_forward                  ; wenn ja, in Counting-State gehen
                         ;
                         ; ------------------------------ State "Forward" --------------------------------
                         ;
          local_forward:
+                        ;
                         ; Nur 1. Kontakt erreicht: Solange Taste in Bewegung ist, Timerwert verringern
-                        CALL local_rd_dyntimer_s0             ; gelesenert Dyntimer-Wert in s0
-                        FETCH s1, s_velocityfac               ; 0..31
-                        CALL mult_soft_s0_s1                  ; s0 x s1 => s8_msb, s7_lsb, s0 bleibt bestehen
-                        ; Subtrahend (= Timerwert * s_velocityfac div 256) jetzt in s8_msb
-                        ; 1/t-Berechnung über log. fallende Kurve: s0 <= s0 - (s0 * s_velocityfac div 256) - 1
-                        ; Subtrahend in s8_msb wird irgendwann 0, es würde in s0 ein Rest bleiben (s_velocityfac - 1)
-                        COMPARE s8_msb, 00
-                        CALL Z, load_s8_with_01               ; wenn 0, auf 1 setzen, Subtrahend nicht 0 werden lassen
-                        SUB s0, s8_msb                        ; Timer um (Timerwert * s_velocityfac div 256) dekrementieren
-                        ; C gesetzt wenn <0, sehr langsamer Tastendruck
-                        CALL C, load_s0_with_01
-                        CALL Z, load_s0_with_01               ; wenn 0, auf 1 setzen
-                        STORE s0, s_last_keytime         ; neuer Raw-Wert Dynamik
+                        CALL local_rd_dyntimer_s0             ; gelesener Dyntimer-Wert in s0, Startwert 0, zählt bis 1 herunter
+                        COMPARE s0, 01
+                        CALL NZ, local_sub_s0                 ; -1
+                        STORE s0, s_last_keytime              ; neuer Raw-Wert Dynamik
                         CALL local_wr_dyntimer_s0             ; Timer mit s0 neu setzen
                         CALL local_wr_s3_keystat              ; aktuellen Zustand für Early Key in RAM speichern
                         ;
                         COMPARE s3_keystatus, c_key_dirty     ; nur 2. Kontakt?
-                        JUMP Z, local_stop_0                  ; 2. Kontakt erreicht, 1. evt. fehlerhaft
+                        JUMP Z, local_pressed                  ; 2. Kontakt erreicht, 1. evt. fehlerhaft
                         COMPARE s3_keystatus, c_key_on
-                        JUMP Z, local_stop_0                  ; 1. und 2. Kontakt erreicht: neuer State, MIDI senden
+                        JUMP Z, local_pressed                  ; 1. und 2. Kontakt erreicht: neuer State, MIDI senden
                         COMPARE s3_keystatus, c_key_idle
-                        JUMP Z, local_reverse_0               ; Taste hat alle Kontakte verlassen, wieder auf Rückweg
+                        JUMP Z, local_reverse                 ; Taste hat alle Kontakte verlassen, wieder auf Rückweg
        local_forward_0:
                         COMPARE s2, c_state_forward
                         RETURN Z                              ; State nicht neu setzen, wenn bereits Counting
                         LOAD s2, c_state_forward              ; wenn noch nicht gestartet, neuer Timer-State
                         JUMP local_wr_state_s2                ; neuer Timer-State: c_state_forward
                         ;
+          local_sub_s0:
+                        SUB s0, 01
+                        RETURN
+                        ;
                         ; ------------------------------ State "Stopped" -------------------------------
                         ;
-         local_stopped: ; 2. Kontakt erreicht
-                        COMPARE s3_keystatus, c_key_idle
-                        JUMP Z, local_reverse_0               ; Taste hat alle Kontakte verlassen, wieder in Ruhestellung
-                        COMPARE s3_keystatus, c_key_moving
-                        JUMP Z, local_reverse_0               ; Taste hat zweiten Kontakt verlassen, bewegt sich zurück
-          local_stop_0:
+         local_pressed:
                         COMPARE s2, c_state_stopped           ; bereits gestoppt und gesendet?
                         RETURN Z                              ; nichts machen, wenn bereits gestoppt
                         LOAD s2, c_state_stopped
                         CALL local_wr_state_s2                ; neuer Timer-State: c_state_stopped
                         JUMP local_states_on                  ; Dynamik-Wert eintragen, MIDI ON senden und Ende
                         ;
+         local_stopped: ; 2. Kontakt erreicht
+                        COMPARE s3_keystatus, c_key_idle
+                        JUMP Z, local_reverse                 ; Taste hat alle Kontakte verlassen, ist jetzt wieder in Ruhestellung
+                        RETURN                                ; sonst nichts tun, bis alle Kontakte verlassen
+                        ;
                         ; ------------------------------ State "Reverse" -------------------------------
                         ;
          local_reverse:
-                        COMPARE s3_keystatus, c_key_idle
-                        JUMP Z, local_idle_off                ; Taste hat alle Kontakte verlassen, wieder in Ruhestellung
-                        COMPARE s3_keystatus, c_key_on
-                        JUMP Z, local_retrig                  ; Taste hat Endkontakt nochmal erreicht
-                        COMPARE s3_keystatus, c_key_dirty
-                        JUMP Z, local_retrig                  ; Taste hat Endkontakt nochmal erreicht
-       local_reverse_0: ; erstmals auf dem Rückweg
-                        COMPARE s2, c_state_reverse           ; bereits c_state_reverse?
-                        RETURN Z                              ; dann zurück
-                        LOAD s2, c_state_reverse
-                        CALL local_wr_state_s2                ; neuer Timer-State: c_state_reverse
+                        CALL local_wr_s3_keystat              ; aktuellen Zustand für Early Key in RAM speichern
+                        LOAD s0, 00
+                        CALL local_wr_dyntimer_s0             ; Timer-Reset mit Anfangswert 0
+                        LOAD s2, c_state_idle
+                        CALL local_wr_state_s2                ; neuer Timer-State: c_state_idle
                         JUMP local_states_off                 ; Taste hat alle Kontakte verlassen, wieder in Ruhestellung
-                        ;
-          local_retrig: ; Retrigger mit etwas verringertem Dynamik-Wert wenn erneut ON
-                        LOAD s2, c_state_stopped              ; nächster Timer-State: Stopped
-                        CALL local_wr_state_s2
-                        CALL local_rd_dyntimer_s0
-                        LOAD s1, A0                           ; zweiter Anschlag etwas geringer
-                        CALL mult_soft_s0_s1                  ; s0 x s1 => s8_msb, s7_lsb, s0 bleibt bestehen
-                        COMPARE s8_msb, 00
-                        CALL Z, load_s8_with_01               ; wenn 0, auf 1, Subtrahend nicht 0 werden lassen
-                        STORE s8_msb, s_last_keytime     ; neuer Raw-Wert Dynamik
-                        JUMP local_states_on                  ; Dynamik-Wert holen, MIDI ON senden und Ende
                         ;
                         ; ------------------------------------------------------------------------------
                         ; Lokale Dyntimer und States lesen/schreiben
@@ -127,7 +99,7 @@
                         OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer
                         OUTPUT s0, RAM_WRDATA                 ; zu schreibende Daten
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
                         RETURN
                         ;
@@ -136,7 +108,7 @@
                         OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
                         OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_read_mask
+                        ADD s6_idx_ptr, RD_BASE
                         INPUT s0, (s6_idx_ptr)                ; Upper, Lower oder Pedal Read
                         RETURN                                ; Zustand in s0
                         ;
@@ -146,7 +118,7 @@
                         OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer
                         OUTPUT s2, RAM_WRDATA                 ; zu schreibende Daten
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s2, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
                         RETURN
                         ;
@@ -155,7 +127,7 @@
                         OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
                         OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_read_mask
+                        ADD s6_idx_ptr, RD_BASE
                         INPUT s2, (s6_idx_ptr)                ; Timer-State dieser Taste in s2
                         RETURN
                         ;
@@ -168,16 +140,23 @@
                         LOAD s1, s3_keystatus
                         COMPARE s1, 00
                         JUMP Z, local_wr_s3_keystat_0         ; wenn OFF, weiter mit 0
-                        FETCH s0, s_last_keytime         ; letzte gemessene Dynamik
+                        FETCH s0, s_last_keytime              ; letzte gemessene ZEIT
                         COMPARE s0, 00
-                        CALL NZ, event_dyn2s0                 ; in 2 Stufen umrechnen
-                        LOAD s1, s0
+                        CALL NZ, local_time2s0                ; in 2 Stufen umrechnen
+                        LOAD s1, 03
  local_wr_s3_keystat_0:
-                        OUTPUT s1, RAM_WRDATA                 ; zu schreibende Zustand in s3_keystatus
+                        OUTPUT s1, RAM_WRDATA                 ; zu schreibende Zustand in s1
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
                         RETURN
+                        ;
+         local_time2s0:
+                        COMPARE s0, c_time_threshold          ; Zeitschwelle, 255 = schnellste Taste, 1 = langsamste Taste
+                        JUMP C, local_time2s0_0               ; JUMP wenn kleiner
+                        LOAD&RETURN s0, 01                  
+        local_time2s0_0:
+                        LOAD&RETURN s0, 03                    ; ist schnell
                         ;
        local_wr_dynkey:
                         ; Scanned-RAM Dynamik
@@ -190,7 +169,7 @@
                         FETCH s0, s_local_dyn                 ; Dynamik dieser Taste
                         OUTPUT s0, RAM_WRDATA                 ; zu schreibende Dynamik in s0
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
                         ; Umgerechnet in 2 Stufen für Event-Loop
                         LOAD s6_idx_ptr, c_page_latestep
@@ -200,29 +179,24 @@
                         CALL NZ, event_dyn2s0
                         OUTPUT s0, RAM_WRDATA                 ; zu schreibende Dynamik in s0
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
                         RETURN
                         ;
                         ; ------------------------------------------------------------------------------
                         ;
        local_states_on:
-                        ; Dynamik-Kurve durch variables Timer-Dekrement, simuliert 1/t
-                        ; Liefert Maximalwerte, die kleiner als 255 sein können
-                        ; Hier wird MIDI-Wert deshalb auf etwas über /2 korrigiert
-                        ;
-                        FETCH s1, s_velocityfac               ; 0..31, von SPI_CONFIG_1 Bits 7..2
-                        ; Wert bei höheren Velocity-Faktoren leicht erhöhen
-                        ADD s1, 83                            ; 80 = halbierter Wert in s8_msb
-                        FETCH s0, s_last_keytime         ; Raw-Dynamik holen
-                        CALL mult_soft_s0_s1                  ; s0 x s1 => s8_msb, s7_lsb
-                        LOAD s0, s8_msb
-                        ADD s0, 08
-                        COMPARE s0, c_midi_mindyn             ; Carry bei A - B < 0, MIDI-Minimalwert
-                        CALL C, load_s0_with_mindyn           ; auf MIDI-Minimalwert setzen
-                        COMPARE s0, 7F                        ; Carry bei A - B < 0
-                        CALL NC, load_s0_with_7F              ; auf MIDI-Maximalwert setzen
-                        STORE s0, s_last_keytime         ; endgültige ON-Dynamik
+                        ; Dynamik-Kurvenwert aus Tabelle holen
+                        FETCH s0, s_last_keytime              ; Raw-Dynamik holen, 0 = schnellste Taste, 1 = langsamste Taste
+                        COMPARE s0, 00                        ; 0 = Schnellste Taste?
+                        CALL Z, load_s0_with_FF               ; dann auf 255 = schnellste Taste setzen  
+                        ADD s0, c_time_offset                 ; Offset von gemessener Zeit 
+                        CALL C, load_s0_with_FF               ; wenn Zeit über Schwelle, auf 255 = schnellste Taste setzen
+     local_states_on_0: ; Wert in s0 jetzt 1 bis 255, 1 = langsamste Taste, 255 = schnellste Taste
+                        XOR s0, FF                            ; invertieren, 0 = schnellste Taste, 254 = langsamste Taste
+                        OUTPUT s0, DYN_TABLE_ADDR             ; Adresse für Dyntable schreiben
+                        LOAD s0, s0                           ; Delay für BRAM Zugriff
+                        INPUT s0, DYN_TABLE                   ; Dyntable-Wert in s0, 127 = schnellste Taste, 10 = langsamste Taste
                         STORE s0, s_local_dyn
                         JUMP local_states_out
                         ;

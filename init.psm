@@ -70,7 +70,7 @@
                         FETCH s6_idx_ptr, s_midi_chan_masked
                         FETCH s1, s_midich                    ; eingestellter Kanal
                         SUB s6_idx_ptr, s1                    ; Manual in s6_idx_ptr
-                        ADD s6_idx_ptr, c_strobe_mask         ; 0 bis 2 plus Offset
+                        ADD s6_idx_ptr, WR_BASE         ; 0 bis 2 plus Offset
                         LOAD s1, 00                           ; Schleifenzähler
                         OUTPUT s0, RAM_WRDATA                 ; zu schreibende Daten in s0
                         ; keine set_ram-Routine, da sA_page_select, s5_scan_key etc. nicht gültig!
@@ -112,9 +112,9 @@
         page_init_loop:
                         OUTPUT s5_scan_key, RAM_ADDR
                         OUTPUT s6_idx_ptr, RAM_PAGE
-                        OUTPUT s0, UPPER_STROBE
-                        OUTPUT s0, LOWER_STROBE
-                        OUTPUT s0, PEDAL_STROBE
+                        OUTPUT s0, WR_UPPER
+                        OUTPUT s0, WR_LOWER
+                        OUTPUT s0, WR_PEDAL
                         ADD s5_scan_key, 01
                         COMPARE s5_scan_key, 64'd             ; 64 Durchläufe?
                         JUMP NZ, page_init_loop

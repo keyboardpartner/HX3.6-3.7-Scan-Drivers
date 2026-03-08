@@ -396,7 +396,7 @@
                         OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
                         OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer in s0
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_read_mask
+                        ADD s6_idx_ptr, RD_BASE
                         INPUT s0, (s6_idx_ptr)                ; Upper, Lower oder Pedal Read
                         RETURN                                ; Zustand in s0
                         ;
@@ -416,6 +416,6 @@
                         OUTPUT s0, RAM_WRDATA
                         OUTPUT s5_scan_key, RAM_ADDR
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_strobe_mask
+                        ADD s6_idx_ptr, WR_BASE
                         OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
                         RETURN

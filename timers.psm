@@ -51,7 +51,7 @@
                         OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
                         OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer in s0
                         LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, c_read_mask
+                        ADD s6_idx_ptr, RD_BASE
                         INPUT s0, (s6_idx_ptr)                ; Upper, Lower oder Pedal Read
                         RETURN                                ; Zustand in s0
                         ;
@@ -82,7 +82,7 @@
                         ADD s0, 01
                         OUTPUT s0, RAM_WRDATA                 ; zu schreibende Daten in s0
                         LOAD s0, 00                           ; NOP
-                        OUTPUT s0, UPPER_STROBE
+                        OUTPUT s0, WR_UPPER
                         LOAD s0, 00                           ; NOP
     update_timer_done1:
                         INPUT s0, RD_LOWER
@@ -93,7 +93,7 @@
                         ADD s0, 01
                         OUTPUT s0, RAM_WRDATA                 ; zu schreibende Daten in s0
                         LOAD s0, 00                           ; NOP
-                        OUTPUT s0, LOWER_STROBE
+                        OUTPUT s0, WR_LOWER
     update_timer_done2:
                         COMPARE s5_scan_key, c_maxkeys_plus1
                         JUMP NZ, update_timer_loop

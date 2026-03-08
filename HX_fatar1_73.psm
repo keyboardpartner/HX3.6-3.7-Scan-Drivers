@@ -17,6 +17,7 @@
                       ; https://www.amd.com/en/products/adaptive-socs-and-fpgas/intellectual-property/picoblaze.html
                       ; https://www1.hs-bremerhaven.de/kmueller/VHDL/PB_Instr_Ref.pdf
                       ;
+                      ; 08.03.2026 #53 vereinfachte State Machine
                       ; 26.02.2026 #52 für FPGA ab #23022024, mit ladbarer Dynamik-Tabelle, siehe "states_dyntable.psm"
                       ; 27.01.2026 #51 Neues universelles Framework, hier für Fatar 61-Tastatur mit 8x8 Matrix und FatarScan 1-61 Board (neu) mit 47HC166-SR
                       ; 10.12.2025 #49 Support für neues FPGA mit separatem SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft
@@ -54,7 +55,7 @@
                       ; Pin 1 = Bit 0 Cancel MIDI Kanal invert., 01 = Cancel Lower, 00 = Cancel Pedal
                       ;
                       ; $60=SR4014, $61=Fatar, $62=Opto, $63=MIDI, $64=OrganScan61, $65=XB2-5, $66=Fatar61 (neu), $67=Fatar73 (neu, mit Presets)
-                      CONSTANT c_corerevi, 52              ; Revisionsnummer
+                      CONSTANT c_corerevi, 53              ; Revisionsnummer
                       CONSTANT c_corevers, 67
                       CONSTANT c_corevers_midionly, 63     ; zum Vergleichen im MIDI-Scan-Treiber
                       CONSTANT c_dyn_threshold, 40         ; MIDI-Dynamikschwelle für full click
@@ -95,8 +96,7 @@
                       INCLUDE "registers.psm"
                       INCLUDE "init.psm"
                       INCLUDE "switches.psm"               ; Fußschalter einlesen und verarbeiten
-                      ; INCLUDE "states.psm"               ; Zustandsautomaten für Tastenverarbeitung
-                      INCLUDE "states_dyntable.psm"        ; Zustandsautomaten für Tastenverarbeitung, mit BRAM-Dynamiktabelle
+                      INCLUDE "states.psm"                 ; Zustandsautomaten für Tastenverarbeitung, mit BRAM-Dynamiktabelle
                       INCLUDE "events_mpx.psm"             ; Event-Loop für MPX-RAM Verarbeitung
                       INCLUDE "timers.psm"                 ; Timer-Routinen für Zustandsautomaten
                       INCLUDE "midi_io.psm"                ; MIDI-Subroutinen für MIDI-Empfang
@@ -445,17 +445,17 @@ local_was_idle_pedal: ; war vorher OFF
                       LOAD s0, c_page_keycontacts
                       OUTPUT s0, RAM_PAGE                  ; MPX-RAM Page
                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
-                      ; Delay min. 1 Befehl vor dem Lesen von BASE_READ_STRB - wichtig!
+                      ; Delay min. 1 Befehl vor dem Lesen von RD_BASE_STRB - wichtig!
                       LOAD s1, s3_keystatus                ; alle Kontakte in einem Byte zusammenfassen, um nur einmal vergleichen zu müssen
                       SL0 s1
                       SL0 s1
                       OR s1, sB_keystatus_lwr
-                      INPUT s0, BASE_READ                  ; Read RAM, s0 enthält jetzt vorherigen Zustand der Kontakte
+                      INPUT s0, RD_BASE                    ; Read RAM, s0 enthält jetzt vorherigen Zustand der Kontakte
                       OR s0, s1                            ; Z-Flag gesetzt wenn Ergebnis 0, d.h. keine Kontakte, vorher auch keine Kontakte
                       JUMP Z, local_keys_skip_1            ; keine Kontaktänderung, nächste Taste
                       ; Neuen Zustand in RAM schreiben, damit er beim nächsten Durchlauf verglichen werden kann
                       OUTPUT s1, RAM_WRDATA                ; zu schreibende Daten, RAM_PAGE und RAM_ADDR noch gültig
-                      OUTPUT s0, BASE_WRITE                ; Write Strobe
+                      OUTPUT s0, WR_BASE                   ; Write Strobe
                       FETCH s0, s_keypressed_acc
                       OR s0, s1
                       STORE s0, s_keypressed_acc
@@ -506,7 +506,7 @@ local_pr_lwr_changed:
                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
                       OUTPUT s1, RAM_WRDATA                ; zu schreibende Daten
-                      LOAD s6_idx_ptr, BASE_WRITE
+                      LOAD s6_idx_ptr, WR_BASE
                       ADD s6_idx_ptr, s9_manual_select
                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
                       RETURN 
@@ -515,7 +515,7 @@ local_pr_lwr_changed:
                       LOAD s6_idx_ptr, c_page_presetkeys
                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
-                      LOAD s6_idx_ptr, BASE_READ
+                      LOAD s6_idx_ptr, RD_BASE
                       ADD s6_idx_ptr, s9_manual_select
                       INPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Read
                       RETURN                               ; Zustand in s0

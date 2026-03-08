@@ -17,7 +17,8 @@
                       ; https://www.amd.com/en/products/adaptive-socs-and-fpgas/intellectual-property/picoblaze.html
                       ; https://www1.hs-bremerhaven.de/kmueller/VHDL/PB_Instr_Ref.pdf
                       ;
-                      ; 26.02.2026 #52 für FPGA ab #23022024, mit ladbarer Dynamik-Tabelle, siehe "states_dyntable.psm"
+                      ; 08.03.2026 #53 vereinfachte State Machine
+                      ; 26.02.2026 #52 für FPGA ab #23022024, mit ladbarer Dynamik-Tabelle, siehe "states.psm"
                       ; 27.01.2026 #51 Neues universelles Framework, hier für Fatar 61-Tastatur mit 8x8 Matrix und FatarScan 1-61 Board (neu) mit 47HC166-SR
                       ; 10.12.2025 #49 Support für neues FPGA mit separatem SAM5504-MIDI-FIFO, MIDI GETBYTE gestrafft
                       ; 11.07.2025 #47 Neue Organisation der Tastenabfrage mit vertauschter Spalte/Reihe (4017/4024-Zähler), deutlich schneller
@@ -54,7 +55,7 @@
                       ; Pin 1 = Bit 0 Cancel MIDI Kanal invert., 01 = Cancel Lower, 00 = Cancel Pedal
                       ;
                       ; $60=SR4014, $61=Fatar, $62=Opto, $63=MIDI, $64=OrganScan61, $65=XB2-5, $66=Fatar61 (neu), $67=Fatar73 (neu, mit Presets), $68=Pulse 6105W
-                      CONSTANT c_corerevi, 52              ; Revisionsnummer
+                      CONSTANT c_corerevi, 53              ; Revisionsnummer
                       CONSTANT c_corevers, 68
                       CONSTANT c_corevers_midionly, 63     ; zum Vergleichen im MIDI-Scan-Treiber
                       CONSTANT c_dyn_threshold, 40         ; MIDI-Dynamikschwelle für full click
@@ -92,8 +93,7 @@
                       INCLUDE "registers.psm"
                       INCLUDE "init.psm"
                       INCLUDE "switches.psm"               ; Fußschalter einlesen und verarbeiten
-                      ; INCLUDE "states.psm"               ; Zustandsautomaten für Tastenverarbeitung
-                      INCLUDE "states_dyntable.psm"        ; Zustandsautomaten für Tastenverarbeitung, mit BRAM-Dynamiktabelle
+                      INCLUDE "states.psm"                 ; Zustandsautomaten für Tastenverarbeitung, mit BRAM-Dynamiktabelle
                       INCLUDE "events_mpx.psm"             ; Event-Loop für MPX-RAM Verarbeitung
                       INCLUDE "timers.psm"                 ; Timer-Routinen für Zustandsautomaten
                       INCLUDE "midi_io.psm"                ; MIDI-Subroutinen für MIDI-Empfang
@@ -269,7 +269,7 @@ local_scanloop_pedal:
                       OUTPUT s0, AUXPIO1                   ; SR-Clk-Impuls für SR-Load
                       ADD s5_scan_key, 01                  ; nächste Pedal-Taste
                       LOAD s0, s0                          ; NOPs für 160ns Impuls (typ. 90ns)
-                      LOAD s0, 00                          
+                      LOAD s0, 00
                       OUTPUT s0, AUXPIO1
                       ;
                       COMPARE s5_scan_key, c_maxbasskeys
@@ -455,7 +455,7 @@ local_was_idle_pedal: ; war vorher OFF
                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
                       OUTPUT s1, RAM_WRDATA                ; zu schreibende Daten
-                      LOAD s6_idx_ptr, c_strobe_mask
+                      LOAD s6_idx_ptr, WR_BASE
                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
                       RETURN 
                       ;
@@ -463,7 +463,7 @@ local_was_idle_pedal: ; war vorher OFF
                       LOAD s6_idx_ptr, c_page_keycontacts
                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer
-                      LOAD s6_idx_ptr, c_read_mask
+                      LOAD s6_idx_ptr, RD_BASE
                       INPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Read
                       RETURN                               ; Zustand in s0
                       ;
