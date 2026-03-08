@@ -1,308 +1,299 @@
-                        ; ##############################################################################
-                        ;
-                        ;      ### #     # ### #######
-                        ;       #  ##    #  #     #
-                        ;       #  # #   #  #     #
-                        ;       #  #  #  #  #     #
-                        ;       #  #   # #  #     #
-                        ;       #  #    ##  #     #
-                        ;      ### #     # ###    #
-                        ;
-                        ; ##############################################################################
-                        ;
-                        ; Initalisierungs-Routine für ScanCore
-                        ;
-             scan_init:
-                        INPUT s0, FEATURE_SPI_FLAG
-                        SR0 s0                                ; Bit 1 (Flag) jetzt Bit 0
-                        OUTPUT s0, MIDI_USE_NEW_ROUTING
-                        STORE s0, s_midi_sam_has_fifo
-                        LOAD s0, 00
-                        STORE s0, s_pedal_noisecounter
-                        STORE s0, s_scanloop_counter
-                        STORE s0, s_sustain_upr
-                        STORE s0, s_sustain_lwr
-                        STORE s0, s_sosten_upr
-                        STORE s0, s_sosten_lwr
-                        OUTPUT s0, SCANPORT
-                        OUTPUT s0, STATUS
-                        OUTPUT s0, MIDI_OUT_SEL
-                        STORE s0, s_midi_1_rxflag             ; Rx-Flag löschen
-                        STORE s0, s_midi_2_rxflag             ; Rx-Flag löschen
-                        STORE s0, s_midi_avr_rxflag           ; Rx-Flag löschen
-                        STORE s0, s_midi_sam_rxflag           ; Rx-Flag löschen
-                        LOAD s9_manual_select, 00
-                        LOAD s8_msb, 00
-                        LOAD s7_lsb, 00
-                        LOAD s5_scan_key, 00
-                        LOAD s3_keystatus, 00
-                        ; INIT Message mit ScanCore Info
-                        LOAD s0, c_corevers
-                        OUTPUT s0, MIDI_DB2
-                        LOAD s0, c_corerevi
-                        OUTPUT s0, MIDI_DB1
-                        LOAD s0, AA
-                        OUTPUT s0, MIDI_CMD
-                        CALL midi_strobe_avr
-                        LOAD s0, 00
-                        LOAD s6_idx_ptr, 00
-     zero_scratch_loop:
-                        STORE s0, (s6_idx_ptr)                ;s0 ist noch 00
-                        ADD s6_idx_ptr, 01
-                        COMPARE s6_idx_ptr, 40
-                        JUMP NZ, zero_scratch_loop
-                        ;
-                        LOAD s0, 40
-                        STORE s0, s_last_keytime
-                        LOAD s6_idx_ptr, 00
-                        CALL scantimer_start
-                        LOAD s0, 00
-                        OUTPUT s0, RAM_PAGE
-                        JUMP send_alloff ; Timer und MPX löschen, MIDI senden
-                        ;
-    allnotesoff_manual:
-                        LOAD s0, 00
-                        STORE s0, s_sustain_upr
-                        STORE s0, s_sustain_lwr
-                        STORE s0, s_sosten_upr
-                        STORE s0, s_sosten_lwr
-                        ; alle Tasten löschen
-                        FETCH s6_idx_ptr, s_midi_chan_masked
-                        FETCH s1, s_midich                    ; eingestellter Kanal
-                        SUB s6_idx_ptr, s1                    ; Manual in s6_idx_ptr
-                        ADD s6_idx_ptr, WR_BASE         ; 0 bis 2 plus Offset
-                        LOAD s1, 00                           ; Schleifenzähler
-                        OUTPUT s0, RAM_WRDATA                 ; zu schreibende Daten in s0
-                        ; keine set_ram-Routine, da sA_page_select, s5_scan_key etc. nicht gültig!
-     allnotesoff_loop1:
-                        OUTPUT s1, RAM_ADDR                   ; Tastennummer in s1
-                        LOAD s0, c_page_earlystep
-                        OUTPUT s0, RAM_PAGE                   ; MPX-RAM Page
-                        OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
-                        LOAD s0, c_page_velocity
-                        OUTPUT s0, RAM_PAGE                   ; MPX-RAM Page
-                        OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
-                        LOAD s0, c_page_keystate
-                        OUTPUT s0, RAM_PAGE                   ; MPX-RAM Page
-                        OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
-                        LOAD s0, c_page_sostenuto
-                        OUTPUT s0, RAM_PAGE                   ; MPX-RAM Page
-                        OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
-                        LOAD s0, c_page_keycontacts
-                        OUTPUT s0, RAM_PAGE                   ; MPX-RAM Page
-                        OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
-                        ADD s1, 01
-                        COMPARE s1, 64'd
-                        JUMP NZ, allnotesoff_loop1
-                        RETURN
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-             page_init:
-                        ; alle Töne, Flags und Timer löschen
-                        LOAD s0, 00
-                        STORE s0, s_sustain_upr
-                        STORE s0, s_sustain_lwr
-                        STORE s0, s_sosten_upr
-                        STORE s0, s_sosten_lwr
-                        OUTPUT s0, RAM_WRDATA                 ; Enables und Werte auf 0
-                        OUTPUT s0, PEDAL_DOWN
-                        LOAD s5_scan_key, 00
-                        LOAD s6_idx_ptr, 00
-        page_init_loop:
-                        OUTPUT s5_scan_key, RAM_ADDR
-                        OUTPUT s6_idx_ptr, RAM_PAGE
-                        OUTPUT s0, WR_UPPER
-                        OUTPUT s0, WR_LOWER
-                        OUTPUT s0, WR_PEDAL
-                        ADD s5_scan_key, 01
-                        COMPARE s5_scan_key, 64'd             ; 64 Durchläufe?
-                        JUMP NZ, page_init_loop
-                        LOAD s5_scan_key, 00
-                        ADD s6_idx_ptr, 01
-                        COMPARE s6_idx_ptr, 16'd              ; 16 Durchläufe?
-                        JUMP NZ, page_init_loop
-                        RETURN                                ; fertig
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-           scan_config:
-                        LOAD s0, 00
-                        FETCH s1, s_keycount_upper            ; Anzahl gedrückter Tasten Upper
-                        COMPARE s1, 00
-                        CALL NZ, load_s0_with_FF
-                        OUTPUT s0, KEYS_ON_UPR
-                        ;
-                        LOAD s0, 00
-                        FETCH s1, s_keycount_lower            ; Anzahl gedrückter Tasten Lower
-                        COMPARE s1, 00
-                        CALL NZ, load_s0_with_FF
-                        OUTPUT s0, KEYS_ON_LWR
-                        ;
-                        INPUT s0, SPI_CONFIG_1
-                        SR0 s0
-                        SR0 s0
-                        SR0 s0
-                        STORE s0, s_velocityfac               ; waren Bits 7..2 (0..63), nochmals halbiert auf 0..31
-                        INPUT s0, SPI_GENTRANSPOSE
-                        FETCH s1, s_transpose
-                        COMPARE s0, s1
-                        STORE s0, s_transpose
-                        CALL NZ, send_alloff                  ; Generator-Transpose geändert
-                        INPUT s1, SPI_CLICKLEN
-                        AND s1, 0F                            ; max. 15 ms
-                        LOAD s0, FF
-                        SUB s0, s1
-                        STORE s0, s_clicklen                  ; Startwert 1ms-Timer, max. 255
-                        INPUT s0, SPI_CLICKLEN
-                        AND s0, F0
-                        SR0 s0
-                        SR0 s0                                ; Wert immer noch vervierfacht
-                        ; z.B. $13(5A) = Teilfaktor 4954 für 10 kHz Samples oder 5 kHz Noise-Frequenz
-                        OUTPUT s0, NOISE_FREQ
-                        ; MIDI-Kanal geändert?
-                        FETCH s1, s_midich
-                        INPUT s0, SPI_MIDICH
-                        COMPARE s0, s1
-                        STORE s0, s_midich
-                        CALL NZ, send_alloff                  ; wenn MIDI-Kanal geändert
-                        ; OUTPUT s0, AUXPORT ; Trigger für LA
-                        INPUT s0, SPI_MIDIOPT
-                        OUTPUT s0, MIDI_OUT_SEL
-                        ;
-                        ; Split überprüfen. In SPI_XXX befindet sich ggf. neue Split-ON/OFF-Einstellung vom Panel
-                        FETCH s0, s_splitpoint
-                        INPUT s1, SPI_SPLITPOINT
-                        STORE s1, s_splitpoint
-                        COMPARE s0, s1
-                        CALL NZ, split_chngd                  ; wenn geändert
-                        ;
-                        FETCH s0, s_splitmode
-                        INPUT s1, SPI_SPLITMODE
-                        STORE s1, s_splitmode
-                        COMPARE s0, s1
-                        CALL NZ, split_chngd                  ; wenn geändert
-                        ;
-                        FETCH s0, s_split_on                  ; alter Split-On-Zustand
-                        INPUT s1, SPI_SPLITON                 ; neu von Bedienelement
-                        STORE s1, s_split_on
-                        AND s0, 03
-                        AND s1, 03
-                        COMPARE s0, s1
-                        RETURN Z                              ; wenn nicht geändert, Ende
-                        ; weiter mit split_chngd
-                        ;
-           split_chngd:
-                        CALL send_alloff
-                        CALL wait_keyb_release                ;´Auf Loslassen aller Tasten warten
-                        ;
-                        FETCH s0, s_split_on
-                        AND s0, 03
-                        COMPARE s0, 00
-                        RETURN Z                              ; wenn wieder ausgeschaltet
-                        ;
-                        ; s0 als PGM senden (TEST)
-                        FETCH s0, s_split_on
-                        CALL midi_testout
-                        ;
-                        ;
-                        ; ##############################################################################
-                        ; Splitmode setzen:
-                        ; 0 = PedalToLower,
-                        ; 1 = LowerToUpper
-                        ; 2 = PedalToUpper
-                        ; 3 = LowerToUpper + 1 Oktave
-                        ; 4 = LowerToUpper + 2 Oktaven
-                        ; 5 = Add Pedal to Lower
-                        ; ##############################################################################
-                        ;
-        set_splitpoint:
-                        FETCH s0, s_split_on
-                        AND s0, 03
-                        ; COMPARE s0, 00                            ; nun ausgeschaltet?
-                        RETURN Z                              ; dann Ende
-                        ; Split-Funktion wurde seit letztem Durchlauf von OFF auf ON geändert.
-                        ; Feststellen, ob Keyboard-Tasten gedrückt wurden, dann diese setzen und als
-                        ; Splitpoint an AVR senden.
-                        FETCH s0, s_keycount_upper
-                        FETCH s1, s_keycount_lower
-                        ADD s0, s1
-                        COMPARE s0, 00
-                        RETURN Z                              ; keine Tasten gedrückt, alter Splitmode
-                        ;
-                        FETCH s0, s_lastkey_on
-                        STORE s0, s_splitpoint
-                        ;
-                        COMPARE s1, 00
-                        JUMP Z, set_splitpoint_upper          ; keine Tasten auf Lower, also Upper
-                        SUB s1, 01
-                        COMPARE s1, 00                        ; enthält jetzt s_keycount_lower -1
-                        ; wenn nur eine Taste gedrückt, SplitMode 0 = PedalToLower speichern
-                        JUMP Z, set_splitpoint_to_AVR
-                        ; es sind hier mehrere Tasten auf Lower gedrückt, Mode 5 = Add Pedal to Lower einstellen
-                        LOAD s1, 05
-                        JUMP set_splitpoint_to_AVR
-                        ;
-  set_splitpoint_upper:
-                        ; Anzahl der Tasten Obermanual ist zufällig auch Splitmode 0..4
-                        FETCH s1, s_keycount_upper
- set_splitpoint_to_AVR:
-                        STORE s1, s_splitmode
-                        ; gewünschten Splitmode an AVR senden, über internal MIDI an Controller $70 und $71
-                        LOAD s0, B0
-                        OUTPUT s0, MIDI_CMD
-                        LOAD s0, 76
-                        OUTPUT s0, MIDI_DB1
-                        OUTPUT s1, MIDI_DB2
-                        CALL midi_strobe_avr
-                        ; MIDI_CMD bleibt!
-                        LOAD s0, 77
-                        OUTPUT s0, MIDI_DB1
-                        FETCH s0, s_splitpoint
-                        OUTPUT s0, MIDI_DB2
-                        CALL midi_strobe_avr
-                        ;
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-           send_alloff:
-                        CALL page_init                        ; Lokale Noten löschen
-                        FETCH s0, s_midich                    ; an alle MIDI-Kanäle senden
-                        ADD s0, B0
-                        CALL send_alloff_data
-                        FETCH s0, s_midich
-                        ADD s0, B1
-                        CALL send_alloff_data
-                        FETCH s0, s_midich
-                        ADD s0, B2
-                        ; weiter mit  send_alloff_data
-      send_alloff_data:
-                        CALL midi_tx_s0
-                        LOAD s0, 7B                           ; Controller 123
-                        CALL midi_tx_s0
-                        LOAD s0, 7F                           ; 127
-                        CALL midi_tx_s0
-                        RETURN
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-        scantimer_start:
-                        LOAD s0, c_scankey_delay              ; Scan-Timer neu laden
-                        OUTPUT s0, SCANTIMER_VAL
-                        RETURN
-                        ;
-                        ; ------------------------------------------------------------------------------
-                        ; Für Split-Bedienung: auf Loslassen aller Tasten warten
-                        ; ------------------------------------------------------------------------------
-                        ;
-     wait_keyb_release:
-                        ; auf Loslassen aller Tasten aller Manuale warten
-                        CALL local_scan_keybds
-                        FETCH s0, s_keypressed_acc
-                        COMPARE s0, 00                       ; keine Tasten mehr gedrückt?
-                        JUMP NZ, wait_keyb_release
-                        RETURN
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-
+                       ; ##############################################################################
+                       ;
+                       ;      ### #     # ### #######
+                       ;       #  ##    #  #     #
+                       ;       #  # #   #  #     #
+                       ;       #  #  #  #  #     #
+                       ;       #  #   # #  #     #
+                       ;       #  #    ##  #     #
+                       ;      ### #     # ###    #
+                       ;
+                       ; ##############################################################################
+                       ;
+                       ; Initalisierungs-Routine für ScanCore
+                       ;
+            scan_init: 
+                       INPUT s0, FEATURE_SPI_FLAG
+                       SR0 s0                               ; Bit 1 (Flag) jetzt Bit 0
+                       OUTPUT s0, MIDI_USE_NEW_ROUTING
+                       STORE s0, s_midi_sam_has_fifo
+                       LOAD s0, 00
+                       STORE s0, s_pedal_noisecounter
+                       STORE s0, s_scanloop_counter
+                       STORE s0, s_sustain_upr
+                       STORE s0, s_sustain_lwr
+                       STORE s0, s_sosten_upr
+                       STORE s0, s_sosten_lwr
+                       OUTPUT s0, SCANPORT
+                       OUTPUT s0, STATUS
+                       OUTPUT s0, MIDI_OUT_SEL
+                       STORE s0, s_midi_1_rxflag            ; Rx-Flag löschen
+                       STORE s0, s_midi_2_rxflag            ; Rx-Flag löschen
+                       STORE s0, s_midi_avr_rxflag          ; Rx-Flag löschen
+                       STORE s0, s_midi_sam_rxflag          ; Rx-Flag löschen
+                       LOAD s9_manual_select, 00
+                       LOAD s8_msb, 00
+                       LOAD s7_lsb, 00
+                       LOAD s5_scan_key, 00
+                       LOAD s3_keystatus, 00
+                       ; INIT Message mit ScanCore Info
+                       LOAD s0, c_corevers
+                       OUTPUT s0, MIDI_DB2
+                       LOAD s0, c_corerevi
+                       OUTPUT s0, MIDI_DB1
+                       LOAD s0, AA
+                       OUTPUT s0, MIDI_CMD
+                       CALL midi_strobe_avr
+                       LOAD s0, 00
+                       LOAD s6_idx_ptr, 00
+    zero_scratch_loop: 
+                       STORE s0, (s6_idx_ptr)               ;s0 ist noch 00
+                       ADD s6_idx_ptr, 01
+                       COMPARE s6_idx_ptr, 40
+                       JUMP NZ, zero_scratch_loop
+                       ;
+                       LOAD s0, 40
+                       STORE s0, s_last_keytime
+                       LOAD s6_idx_ptr, 00
+                       CALL scantimer_start
+                       LOAD s0, 00
+                       OUTPUT s0, RAM_PAGE
+                       JUMP send_alloff                     ; Timer und MPX löschen, MIDI senden
+                       ;
+   allnotesoff_manual: 
+                       LOAD s0, 00
+                       STORE s0, s_sustain_upr
+                       STORE s0, s_sustain_lwr
+                       STORE s0, s_sosten_upr
+                       STORE s0, s_sosten_lwr
+                       ; alle Tasten löschen
+                       FETCH s6_idx_ptr, s_midi_chan_masked
+                       FETCH s1, s_midich                   ; eingestellter Kanal
+                       SUB s6_idx_ptr, s1                   ; Manual in s6_idx_ptr
+                       ADD s6_idx_ptr, WR_BASE              ; 0 bis 2 plus Offset
+                       LOAD s1, 00                          ; Schleifenzähler
+                       OUTPUT s0, RAM_WRDATA                ; zu schreibende Daten in s0
+                       ; keine set_ram-Routine, da sA_page_select, s5_scan_key etc. nicht gültig!
+    allnotesoff_loop1: 
+                       OUTPUT s1, RAM_ADDR                  ; Tastennummer in s1
+                       LOAD s0, c_page_earlystep
+                       OUTPUT s0, RAM_PAGE                  ; MPX-RAM Page
+                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
+                       LOAD s0, c_page_velocity
+                       OUTPUT s0, RAM_PAGE                  ; MPX-RAM Page
+                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
+                       LOAD s0, c_page_keystate
+                       OUTPUT s0, RAM_PAGE                  ; MPX-RAM Page
+                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
+                       LOAD s0, c_page_sostenuto
+                       OUTPUT s0, RAM_PAGE                  ; MPX-RAM Page
+                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
+                       LOAD s0, c_page_keycontacts
+                       OUTPUT s0, RAM_PAGE                  ; MPX-RAM Page
+                       OUTPUT s0, (s6_idx_ptr)              ; Upper, Lower oder Pedal Strobe
+                       ADD s1, 01
+                       COMPARE s1, 64'd
+                       JUMP NZ, allnotesoff_loop1
+                       RETURN 
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+            page_init: 
+                       ; alle Töne, Flags und Timer löschen
+                       LOAD s0, 00
+                       STORE s0, s_sustain_upr
+                       STORE s0, s_sustain_lwr
+                       STORE s0, s_sosten_upr
+                       STORE s0, s_sosten_lwr
+                       OUTPUT s0, RAM_WRDATA                ; Enables und Werte auf 0
+                       OUTPUT s0, PEDAL_DOWN
+                       LOAD s5_scan_key, 00
+                       LOAD s6_idx_ptr, 00
+       page_init_loop: 
+                       OUTPUT s5_scan_key, RAM_ADDR
+                       OUTPUT s6_idx_ptr, RAM_PAGE
+                       OUTPUT s0, WR_UPPER
+                       OUTPUT s0, WR_LOWER
+                       OUTPUT s0, WR_PEDAL
+                       ADD s5_scan_key, 01
+                       COMPARE s5_scan_key, 64'd            ; 64 Durchläufe?
+                       JUMP NZ, page_init_loop
+                       LOAD s5_scan_key, 00
+                       ADD s6_idx_ptr, 01
+                       COMPARE s6_idx_ptr, 16'd             ; 16 Durchläufe?
+                       JUMP NZ, page_init_loop
+                       RETURN                               ; fertig
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+          scan_config: 
+                       LOAD s0, 00
+                       FETCH s1, s_keycount_upper           ; Anzahl gedrückter Tasten Upper
+                       COMPARE s1, 00
+                       CALL NZ, load_s0_with_FF
+                       OUTPUT s0, KEYS_ON_UPR
+                       ;
+                       LOAD s0, 00
+                       FETCH s1, s_keycount_lower           ; Anzahl gedrückter Tasten Lower
+                       COMPARE s1, 00
+                       CALL NZ, load_s0_with_FF
+                       OUTPUT s0, KEYS_ON_LWR
+                       ;
+                       INPUT s0, SPI_CONFIG_1
+                       SR0 s0
+                       SR0 s0
+                       SR0 s0
+                       STORE s0, s_velocityfac              ; waren Bits 7..2 (0..63), nochmals halbiert auf 0..31
+                       INPUT s0, SPI_GENTRANSPOSE
+                       FETCH s1, s_transpose
+                       COMPARE s0, s1
+                       STORE s0, s_transpose
+                       CALL NZ, send_alloff                 ; Generator-Transpose geändert
+                       INPUT s1, SPI_CLICKLEN
+                       AND s1, 0F                           ; max. 15 ms
+                       LOAD s0, FF
+                       SUB s0, s1
+                       STORE s0, s_clicklen                 ; Startwert 1ms-Timer, max. 255
+                       INPUT s0, SPI_CLICKLEN
+                       AND s0, F0
+                       SR0 s0
+                       SR0 s0                               ; Wert immer noch vervierfacht
+                       ; z.B. $13(5A) = Teilfaktor 4954 für 10 kHz Samples oder 5 kHz Noise-Frequenz
+                       OUTPUT s0, NOISE_FREQ
+                       ; MIDI-Kanal geändert?
+                       FETCH s1, s_midich
+                       INPUT s0, SPI_MIDICH
+                       COMPARE s0, s1
+                       STORE s0, s_midich
+                       CALL NZ, send_alloff                 ; wenn MIDI-Kanal geändert
+                       ; OUTPUT s0, AUXPORT ; Trigger für LA
+                       INPUT s0, SPI_MIDIOPT
+                       OUTPUT s0, MIDI_OUT_SEL
+                       ;
+                       ; Split überprüfen. In SPI_XXX befindet sich ggf. neue Split-ON/OFF-Einstellung vom Panel
+                       FETCH s0, s_splitpoint
+                       INPUT s1, SPI_SPLITPOINT
+                       STORE s1, s_splitpoint
+                       COMPARE s0, s1
+                       CALL NZ, split_chngd                 ; wenn geändert
+                       ;
+                       FETCH s0, s_splitmode
+                       INPUT s1, SPI_SPLITMODE
+                       STORE s1, s_splitmode
+                       COMPARE s0, s1
+                       CALL NZ, split_chngd                 ; wenn geändert
+                       ;
+                       FETCH s0, s_split_on                 ; alter Split-On-Zustand
+                       INPUT s1, SPI_SPLITON                ; neu von Bedienelement
+                       STORE s1, s_split_on
+                       AND s0, 03
+                       AND s1, 03
+                       COMPARE s0, s1
+                       RETURN Z                             ; wenn nicht geändert, Ende
+                       ; weiter mit split_chngd
+                       ;
+          split_chngd: 
+                       CALL send_noteoff
+                       CALL wait_keyb_release               ; Auf Loslassen aller Tasten warten
+                       CALL page_init
+                       ;
+                       ; ##############################################################################
+                       ; Splitmode setzen:
+                       ; 0 = PedalToLower,
+                       ; 1 = LowerToUpper
+                       ; 2 = PedalToUpper
+                       ; 3 = LowerToUpper + 1 Oktave
+                       ; 4 = LowerToUpper + 2 Oktaven
+                       ; 5 = Add Pedal to Lower
+                       ; ##############################################################################
+                       ;
+       set_splitpoint: 
+                       FETCH s0, s_split_on
+                       AND s0, 03
+                       ; nun ausgeschaltet?
+                       RETURN Z                             ; dann Ende
+                       ; Split-Funktion wurde seit letztem Durchlauf von OFF auf ON geändert.
+                       ; Feststellen, ob Keyboard-Tasten gedrückt wurden, dann diese setzen und als
+                       ; Splitpoint an AVR senden.
+                       FETCH s0, s_keycount_upper
+                       FETCH s1, s_keycount_lower
+                       ADD s0, s1
+                       COMPARE s0, 00
+                       RETURN Z                             ; keine Tasten gedrückt, alter Splitmode
+                       ;
+                       FETCH s0, s_lastkey_on
+                       STORE s0, s_splitpoint
+                       ;
+                       COMPARE s1, 00
+                       JUMP Z, set_splitpoint_upper         ; keine Tasten auf Lower, also Upper
+                       SUB s1, 01
+                       COMPARE s1, 00                       ; enthält jetzt s_keycount_lower -1
+                       ; wenn nur eine Taste gedrückt, SplitMode 0 = PedalToLower speichern
+                       JUMP Z, set_splitpoint_to_AVR
+                       ; es sind hier mehrere Tasten auf Lower gedrückt, Mode 5 = Add Pedal to Lower einstellen
+                       LOAD s1, 05
+                       JUMP set_splitpoint_to_AVR
+                       ;
+ set_splitpoint_upper: 
+                       ; Anzahl der Tasten Obermanual ist zufällig auch Splitmode 0..4
+                       FETCH s1, s_keycount_upper
+set_splitpoint_to_AVR: 
+                       STORE s1, s_splitmode
+                       ; gewünschten Splitmode an AVR senden, über internal MIDI an Controller $70 und $71
+                       LOAD s0, B0
+                       OUTPUT s0, MIDI_CMD
+                       LOAD s0, 76
+                       OUTPUT s0, MIDI_DB1
+                       OUTPUT s1, MIDI_DB2
+                       CALL midi_strobe_avr
+                       ; MIDI_CMD bleibt!
+                       LOAD s0, 77
+                       OUTPUT s0, MIDI_DB1
+                       FETCH s0, s_splitpoint
+                       OUTPUT s0, MIDI_DB2
+                       CALL midi_strobe_avr
+                       ;
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+          send_alloff: 
+                       CALL page_init                       ; Lokale Noten löschen
+         send_noteoff: 
+                       FETCH s0, s_midich                   ; an alle MIDI-Kanäle senden
+                       ADD s0, B0
+                       CALL send_alloff_data
+                       FETCH s0, s_midich
+                       ADD s0, B1
+                       CALL send_alloff_data
+                       FETCH s0, s_midich
+                       ADD s0, B2
+                       ; weiter mit  send_alloff_data
+     send_alloff_data: 
+                       CALL midi_tx_s0
+                       LOAD s0, 7B                          ; Controller 123
+                       CALL midi_tx_s0
+                       LOAD s0, 7F                          ; 127
+                       CALL midi_tx_s0
+                       RETURN 
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+      scantimer_start: 
+                       LOAD s0, c_scankey_delay             ; Scan-Timer neu laden
+                       OUTPUT s0, SCANTIMER_VAL
+                       RETURN 
+                       ;
+                       ; ------------------------------------------------------------------------------
+                       ; Für Split-Bedienung: auf Loslassen aller Tasten warten
+                       ; ------------------------------------------------------------------------------
+                       ;
+    wait_keyb_release: 
+                       ; auf Loslassen aller Tasten aller Manuale warten
+                       CALL local_scan_keybds
+                       FETCH s0, s_keypressed_acc
+                       COMPARE s0, 00                       ; keine Tasten mehr gedrückt?
+                       JUMP NZ, wait_keyb_release
+                       RETURN 
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;

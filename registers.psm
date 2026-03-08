@@ -1,339 +1,339 @@
-                      ; ##############################################################################
-                      ; ############################ MPX-RAM-Organisation ###########################
-                      ; ##############################################################################
-                      ;
-                      ; Ein/Ausschalten der HX3-Tastenkontakte erfolgt durch Schreiben der
-                      ; Kontaktdaten in ein Dual-Port-RAM, das sogerannte MPX-RAM.
-                      ; Jede Taste(nspalte) belegt eine Adresse,
-                      ; so dass das tiefste "C" immer Adresse 0 hat, das höchste "C" Adresse 60.
-                      ; Für jedes Manual stehen 8 Bits des 18-Bit-Datenbusses zur Verfügung,
-                      ; für das Pedal 2 (sonst ungenutzte Paritätsbits). Jeder Teil kann getrennt geschrieben/gelesen werden.
-                      ; MPX-RAM besteht aus 16 Pages je 64 Worte, 16 Bit plus zwei "Parity"-Bits,
-                      ; die hier für den Pedal-Status benutzt werden. Auswahl der Page über RAM_PAGE.
-                      ; MSB, LSB und Parity-Bits können getrennt über STROBEs geschrieben werden.
-                      ;
-                      ; Page 0 dient direkt als Freigabe für Tastenkontakte, im FPGA als
-                      ; zwei CONTACTS-Bytes für Upper- und Lower-Gating:
-                      ;
-                      ; ##### LOWER #####   ##### UPPER #####  -  Bytes
-                      ; 7 MSN 4  3 LSN 0    7 MSN 4  3 LSN 0   -  Nibbles
-                      ; #NOISE#  #STEAD#    #NOISE#  #STEAD#
-                      ; - C B A  L C B A    - C B A  L C B A   -  Bits
-                      ;
-                      ; Dabei wird Wert ABC jeweils anhand des folgenden Schemas dekodiert,
-                      ; mit ABC = Anzahl eingeschalteter Tastenkontakte lt. folgender Tabelle, L = Level-Bit (0 = halber Pegel)
-                      ; ABC Kontakte Busbar 15..0
-                      ; 0   0000000000000000, ; alle OFF
-                      ; 1   0000000000100000, ; Stufe 1...
-                      ; 2   0000000000100100,
-                      ; 3   0000000010100100,
-                      ; 4   0011000010100110,
-                      ; 5   0011000111100110,
-                      ; 6   1011101111101111,
-                      ; 7   1111111111111111 ; bis Stufe 7, alle ON
-                      ;
-                      ; Es ist somit (ggf. für Opto/Hallsensor-Tastaturen) möglich, das Click-Noise- und Steady-Signal getrennt
-                      ; in 8 Stufen und mit zwei Pegelstufen (halber/voller) nacheinander einzuschalten, um das Kontaktprellen
-                      ; und den Kontakt-Übergangswiderstand zu simulieren.
-                      ;
-                      ; Verhalten Tastenkontakt-Bits nach Dekodierung ABC -> Kontakte aus obiger Tabelle
-                      ; noise_bb_bit  steady_bb_bit  level_full_bit  Resultat
-                      ; 0             0              0               OFF
-                      ; 1             0              0               HALF NOISE
-                      ; 0             1              0               HALF STEADY
-                      ; 1             1              0               HALF NOISE, HALF STEADY
-                      ; 0             0              1               OFF
-                      ; 1             0              1               FULL NOISE
-                      ; 0             1              1               FULL STEADY
-                      ; 1             1              1               FULL STEADY
-                      ;
-                      ; Pedalkontakt CONT_PEDAL ist an Bit(0) angeschlossen, Bit (1) kann als Scratch dienen.
-                      ; Die Nibbles können in pb_scanif.vhd einzeln gelesen werden!
-                      ; PAGE 1 als Soft-Timer für Tastenkontakte
-                      ; PAGE 2 als Soft-Timer für Noise
-                      ; PAGEs 6 bis 15 können nach Belieben verwendet werden.
-                      ;
-                      ; MPX RAM_PAGE Offsets
-                      ; Seitenaufteilung in 64-Byte-Seiten, Auswahl über RAM_PAGE
-                      ;
-                      CONSTANT c_page_vcontacts, 00        ; virtuelle Tastenkontakte, 0..60, direktes Lesen und Schreiben
-                      CONSTANT c_page_dyntimer, 01         ; Dynamik-Timer 0..60 für Tastatur-Scan
-                      CONSTANT c_page_noisetimer, 02       ; Noise-Timer 0..60
-                      CONSTANT c_page_keystate, 03         ; State Machine Tastenspalte 0..60
-                      CONSTANT c_page_velocity, 04         ; Über Timer-Berechnung ermittelte Keyboard-Dynamik für Tasten 0..60
-                      CONSTANT c_page_earlystep, 05        ; Eigene Tastatur Early-Zustand für Tasten 0..60
-                      CONSTANT c_page_latestep, 06         ; Eigene Tastatur 2 Stufen für Tasten 0..60, aus Dynamik errechnet
-                      CONSTANT c_page_sostenuto, 07        ; Sostenuto-Flags 0..60
-                      CONSTANT c_page_keycontacts, 08      ; vorheriger Tastenzustand 0..60
-                      CONSTANT c_page_xb2data, 09          ; Dynamik-Werte XB2 Upper
-                      CONSTANT c_page_presetkeys, 09       ; Preset-Tastenzustand Upper, Lower
-                      ;
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ; Portadressen bidirektional
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ;
-                      ; $00 bis $07 Einzelbits SCANPORT Eingang, für Opto und Fatar
-                      CONSTANT SCANPIO1, 00                ; Group Clock 4024/4051 MPX
-                      CONSTANT SCANPIO2, 01                ; Group Reset 4024/4024 MPX
-                      CONSTANT SCANPIO3, 02                ; Break 1st Contact von 4051, Upper
-                      CONSTANT SCANPIO4, 03                ; Make 2nd Contact von 4051, Upper
-                      CONSTANT SCANPIO5, 04                ; Key Clock 4017
-                      CONSTANT SCANPIO6, 05                ; Key Reset 4017
-                      CONSTANT SCANPIO7, 06                ; Break 1st Contact von 4051, Lower
-                      CONSTANT SCANPIN8, 07                ; Make 2nd Contact von 4051, Lower, nur Eingang!
-                      ; $00 bis $07 Einzelbits AUXPORT Eingang, für OrganScan/HOAX5 mit 4014 und Bass13/25
-                      CONSTANT AUXPIO1, 08                 ; Clock SR 4014
-                      CONSTANT AUXPIO2, 09                 ; Parallel Load SR 4014
-                      CONSTANT AUXPIO3, 0A                 ; Shift Out Upper SR 4014
-                      CONSTANT AUXPIO4, 0B                 ; Shift Out Lower SR 4014
-                      CONSTANT AUXPIO5, 0C                 ; Shift Out Pedal SR 4014
-                      CONSTANT AUXPIO6, 0D                 ; frei für Debug-Zwecke
-                      ;CONSTANT AUXPIO7, 0E                ; ACHTUNG: Für Rotary-LED-PWM benutzt
-                      CONSTANT AUXPIN8, 0F                 ; unbenutzt, nur Eingang!
-                      ;
-                      CONSTANT K_ACK, 00                   ; für XB2, SCANPIO1
-                      CONSTANT K_ENALWR, 01                ; für XB2, SCANPIO2
-                      CONSTANT K_ENAUPR, 02                ; für XB2, SCANPIO3
-                      CONSTANT K_RST, 03                   ; für XB2, SCANPIO4
-                      CONSTANT K_EMPTY, 0E                 ; für XB2, Data Present (D6) AUXPIO7
-                      CONSTANT K_STB, 0F                   ; für XB2, AUXPIN8
-                      CONSTANT K_DATA, 18                  ; für XB2, AUXPORT
-                      ;
-                      CONSTANT SCANPIN, 10                 ; Fatar Scan Port gesamt READ
-                      CONSTANT SCANPORT, 10                ; Fatar Scan Port gesamt WRITE
-                      CONSTANT SCANPORT_DDR, 11            ; Fatar Scan Port Data Direction
-                      CONSTANT AUXPIN, 18                  ; SR4014/Auxiliary Port gesamt READ
-                      CONSTANT AUXPORT, 18                 ; SR4014/Auxiliary Port gesamt WRITE
-                      CONSTANT AUXPORT_DDR, 19             ; SR4014/Auxiliary Port Data Direction
-                      CONSTANT SWITCHPIN, 32               ; Switches Port gesamt READ
-                      CONSTANT SWITCHPORT, 28              ; Switches Port gesamt WRITE
-                      CONSTANT SWITCHPORT_DDR, 29          ; Switches Port Data Direction
-                      ; Output ports
-                      CONSTANT WR_BASE, 20                 ; Schreibzugriff indirekt
-                      CONSTANT WR_UPPER, 20                ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
-                      CONSTANT WR_LOWER, 21                ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Lower (1 Byte)
-                      CONSTANT WR_PEDAL, 22                ; Schreibzugriff erzeugt Write für Pedal-Bits (2 Bits)
-                      CONSTANT MIDI_CMD, 30                ; MIDI-Befehl
-                      CONSTANT MIDI_DB1, 31
-                      CONSTANT MIDI_DB2, 32
-                      CONSTANT MIDI_STR, 33                ; MIDI Strobe für AVR, neg. Flanke
-                      CONSTANT STATUS, 34                  ; STATUS an AVR SPI, Bit 0 bis 3 durch PB schreibbar, Bit 4 und 5 direkt SPI MIDI FIFO STAT
-                      CONSTANT KEYS_ON_UPR, 35             ; Bit 0: auf Upper sind Tasten gedrückt
-                      CONSTANT KEYS_ON_LWR, 36             ; Bit 0: auf Lower sind Tasten gedrückt
-                      ; CONSTANT BASS_ENV, 37                 ; UNUSED
-                      CONSTANT PEDAL_DOWN, 38              ; Bit 0
-                      CONSTANT PED_ACC_ENA, 39             ; für pedal click noise
-                      CONSTANT MIDI_OUT_SEL, 3A            ; auf 4-fach Multiplexer
-                      CONSTANT MIDI_USE_NEW_ROUTING, 3B    ; neues MIDI-Routing mit separatem Eingang 3 aktiv wenn '1', vom Scan-Treiber zu setzen
-                      CONSTANT ENA_PWM, 3C                 ; Enable PWM-Ausgabe für Expander-LEDs
-                      ; MIDI_OUT_SEL: 0 = MIDI_TX_DIN, 1 = MIDI_IN_1, 2 = MIDI_IN_2, 3 = MIDI_FROM_SAM (USB)
-                      ; Universal-Timer, hier für Scan-Durchlauf, 255 = 5,22 ms
-                      ; wird mit jedem SYNC alle 20,48 µs dekrementiert bis 0 erreicht
-                      CONSTANT SCANTIMER_VAL, 3D           ; Schreiben des neuen Wertes startet Timer
-                      CONSTANT SCANTIMER_ZERO, 3E          ; Flag wenn 0 erreicht
-                      CONSTANT NOISE_FREQ, 3F              ; bestimmt Noise-Frequenz
-                      CONSTANT RAM_PAGE, 40                ; Seitenadresse zum einfacheren Zugriff, Page 0 = MPX Dual Port
-                      CONSTANT RAM_ADDR, 41                ; für alle Zugriffe gültig
-                      CONSTANT RAM_WRDATA, 42              ; zu schreibende Daten
-                      ;
-                      CONSTANT MIDI_TX_DIN, 80             ; MIDI UART-Tx-FIFO an DIN MAIN OUT, MIDI_STRB_128
-                      CONSTANT MIDI_TX_SAM, 81             ; MIDI UART-Tx-FIFO an SAM5504 DSP, MIDI_STRB_129
-                      ;
-                      CONSTANT DYN_TABLE, 82               ; LC Dyntable Daten Lesen, 0..127
-                      CONSTANT DYN_TABLE_ADDR, 82          ; LC Dyntable Adresse Schreiben, 0..255, Timerwert 0 = schnellste Taste, 255 = langsamste Taste
-                      ;
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ; Input Ports
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ; Flags für SPI-Empfang:
-                      ; Bit 0 = Daten wurden geschrieben (wird durch Lesen der SPI-Register gelöscht)
-                      ; Bit 1 = AVR-MIDI FIFO Daten im Buffer,
-                      ; Bit 2 = AVR-MIDI FIFO Buffer halb voll
-                      ; Bit 3 = AVR-MIDI FIFO Buffer voll
-                      ;
-                      CONSTANT FEATURE_SPI_FLAG, 30        ; war "0000000" & spiflag, jetzt "0000001" & spiflag wenn neues FPGA
-                      CONSTANT TX_STATUS, 31               ; Bit 0 = TX DIN (1) voll, Bit 1 = TX SAM (2) voll
-                      CONSTANT RD_BASE, 34                 ; für indirektes Lesen
-                      CONSTANT RD_UPPER, 34                ; Upper-Byte vom MPX-RAM
-                      CONSTANT RD_LOWER, 35                ; Lower-Byte vom MPX-RAM
-                      CONSTANT RD_PEDAL, 36                ; Pedal-Bits vom MPX-RAM (1:0)
-                      CONSTANT MIDI_IN1, 38
-                      CONSTANT MIDI_IN1_STATUS, 39         ; "0000" & midi_1_full & midi_1_half & midi_1_datapresent & '0';
-                      CONSTANT MIDI_IN2, 3A
-                      CONSTANT MIDI_IN2_STATUS, 3B         ; "0000" & midi_2_full & midi_2_half & midi_2_datapresent & '0';
-                      CONSTANT MIDI_AVR, 3C                ; MIDI vom AVR über SPI
-                      CONSTANT MIDI_AVR_STATUS, 3D         ; "0000" & avrfifo_full & avrfifo_half & avrfifo_datapresent & avrmidiflag
-                      ; Können benutzt werden, wenn FEATURE_SPI_FLAG = "0000001x" ist (neues FPGA mit eigenem FIFO für SAM5504)
-                      ; und MIDI_USE_NEW_ROUTING $3B vom Scan-Treiber auf $01 gesetzt wurde
-                      CONSTANT MIDI_IN_SAM, 37             ; MIDI IN SAM auf eigenem FIFO (neu, separat statt mit MIDI IN2 verANDet)
-                      CONSTANT MIDI_SAM_STATUS, 33         ; "0000" & midi_3_full & midi_3_half & midi_3_datapresent & '0';
-                      CONSTANT RND_NUMBER, 3F              ; Zufallswert 8 Bit
-                      ;
-                      ; Werte vom AVR-SPI
-                      CONSTANT SPI_MIDICH, 24              ; Adresse $04 von außen (AVR)
-                      CONSTANT SPI_MIDIOPT, 25
-                      CONSTANT SPI_SPLITMODE, 26
-                      CONSTANT SPI_SPLITON, 27             ; 7 von außen (AVR)
-                      CONSTANT SPI_SPLITPOINT, 28          ; 8 von außen (AVR)
-                      CONSTANT SPI_CLICKLEN, 29
-                      CONSTANT SPI_GENTRANSPOSE, 2A        ; 10 = Generator Transpose
-                      CONSTANT SPI_CONFIG_1, 2B            ; 11 = EARLY_KEY (Bit 0), (LUBED_CONTACTS (Bit 1), VelocityFactor (Bit 7..2)
-                      ; SPI_AVR_MIDI, 2C ; AVR-MIDI-Daten, FIFO-Eingang
-                      CONSTANT SPI_KEYTRANSPOSE, 2D        ; Key Transpose (local keyboard)
-                      CONSTANT SPI_MIDISEND_DISABLES, 2E   ; Bit 0..2 verhindern Senden der Manual-Daten wenn "1"
-                      CONSTANT SPI_PWM_LOCALDISABLES, 2E     ; Bit 0..2 Local Enables, Bit 4..7 LED PWM für MIDI Scantreiber
-                      CONSTANT SPI_AUXPORT, 2F               ; für Expander-LEDs in HX3.7
-                      ;
-                      CONSTANT c_state_idle, 00            ; für Tastenabfrage-Timer, OFF gesendet
-                      CONSTANT c_state_forward, 01         ; für Tastenabfrage-Timer, zählend
-                      CONSTANT c_state_stopped, 02         ; für Tastenabfrage-Timer, angehalten
-                      CONSTANT c_state_reverse, 03         ; für Tastenabfrage-Timer, bewegt sich zurück
-                      CONSTANT c_state_idle_pedal, 00      ; für Tastenabfrage-Timer, Ruhezustand
-                      CONSTANT c_state_on_pedal, 01        ; für Tastenabfrage-Timer, angehalten
-                      ;
-                      CONSTANT c_key_idle, 00              ; für Tastenabfrage, Ruhezustand
-                      CONSTANT c_key_moving, 01            ; für Tastenabfrage, in Bewegung
-                      CONSTANT c_key_dirty, 02             ; für Tastenabfrage, Ende erreicht (dirty)
-                      CONSTANT c_key_on, 03                ; für Tastenabfrage, Ende erreicht
-                      CONSTANT c_pedal_idle, 00            ; für Tastenabfrage, Ruhezustand
-                      CONSTANT c_pedal_on, 01              ; für Tastenabfrage, angehalten
-                      ;
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ; Picoblaze Scratchpad Memory
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ;
-                      CONSTANT s_split_on, 00              ; Letzter Split-Zustand
-                      CONSTANT s_splitpoint, 01            ; Tastennummer von SPI-AVR
-                      CONSTANT s_splitmode, 02
-                      CONSTANT s_transpose, 03             ; Tongenerator/MIDI-IN-Transpose
-                      ;
-                      CONSTANT s_keystatus_upper, 10       ; für Tastenabfrage, vorheriger Tastenzustand
-                      CONSTANT s_keystatus_lower, 11
-                      CONSTANT s_keystatus_pedal, 12
-                      ;
-                      CONSTANT s_tdrive , 20'd             ; für Tastenabfrage, aktueller T-Drive-Wert, 0..7 für Fatar und Pulse
-                      CONSTANT s_mkbr_count , 21'd         ; für Tastenabfrage, aktuelles Bitpaar
-                      ;
-                      CONSTANT s_keycount_upper, 32'd
-                      CONSTANT s_keycount_lower, 33'd
-                      CONSTANT s_keycount_pedal, 34'd      ; Dummy für Pedal, nicht belegen!
-                      ;
-                      CONSTANT s_keypressed_acc, 35'd      ; Flag, ob Taste gedrückt wurde seit letztem Scan
-                      ;
-                      CONSTANT s_scan_key_save, 36'd
-                      CONSTANT s_velocityfac, 38'd         ; Faktor für Timer-Dekrement
-                      CONSTANT s_pedal_on, 39'd            ; Bass-Flag Trigger für Hüllkurve
-                      CONSTANT s_midich, 40'd              ; eingestellter MIDI-Kanal
-                      ;
-                      CONSTANT s_switches_old, 43'd        ; kommt als Bit 1 von Split_ON (0000 00X0)
-                      CONSTANT s_sustain_upr, 44'd
-                      CONSTANT s_sustain_lwr, 45'd
-                      ; 46 Dummy für Pedal, immer 0, nicht belegen!
-                      CONSTANT s_sosten_upr, 47'd          ; Empfangenes CC 64, Sostenuto aktiv
-                      CONSTANT s_sosten_lwr, 48'd
-                      ; 49 Dummy für Pedal, immer 0, nicht belegen!
-                      CONSTANT s_local_key, 50'd           ; für local out, enthält aktuelle Taste einschließlich Offset
-                      CONSTANT s_local_dyn, 51'd
-                      CONSTANT s_pedal_noisecounter, 52'd
-                      CONSTANT s_scanloop_counter, 53'd
-                      CONSTANT s_lastkey_on, 54'd          ; letzte gedrückte Taste für Split
-                      CONSTANT s_clicklen, 55'd            ; Timer-Startwert
-                      CONSTANT s_last_keytime, 56'd
-                      ;
-                      ;
-                      CONSTANT s_vcont_upper, 61'd         ; gleichzeitig von Event gelesene Kontakt-Zustände
-                      CONSTANT s_vcont_lower, 62'd
-                      CONSTANT s_vcont_pedal, 63'd
-                      ;
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ; Extended scratchpad memory bei KCPSM6, hier fuer MIDI, ab 64'd
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ;
-                      ; MIDI-Daten für Interpreter/Dispatcher
-                      CONSTANT s_midi_cmd, 40              ;  = 64'd
-                      CONSTANT s_midi_data1, 41
-                      CONSTANT s_midi_data2, 42
-                      CONSTANT s_midi_len, 43
-                      CONSTANT s_midi_cmd_masked, 44       ; upper Nibble
-                      CONSTANT s_midi_chan_masked, 45      ; lower Nibble
-                      CONSTANT s_midi_activesensing, 46    ; Zähler/Timer für MIDI Active Sensing
-                      CONSTANT s_midi_sam_has_fifo, 47     ; ist 01 wenn neues FPGA mit separatem SAM-FIFO
-                      ; Indizierbare MIDI-Empfangs-Variablen für 4 MIDI-Eingänge
-                      ; MIDI Command per Polling vom FIFO
-                      CONSTANT c_midi_cmd_base, 50
-                      CONSTANT s_midi_1_cmd, 50
-                      CONSTANT s_midi_2_cmd, 51
-                      CONSTANT s_midi_avr_cmd, 52
-                      CONSTANT s_midi_sam_cmd, 53
-                      ; MIDI Datenbyte 1 per Polling vom FIFO
-                      CONSTANT c_midi_data1_base, 54
-                      CONSTANT s_midi_1_data1, 54
-                      CONSTANT s_midi_2_data1, 55
-                      CONSTANT s_midi_avr_data1, 56
-                      CONSTANT s_midi_sam_data1, 57
-                      ; MIDI Datenbyte 2 per Polling vom FIFO
-                      CONSTANT c_midi_data2_base, 58
-                      CONSTANT s_midi_1_data2, 58
-                      CONSTANT s_midi_2_data2, 59
-                      CONSTANT s_midi_avr_data2, 5A
-                      CONSTANT s_midi_sam_data2, 5B
-                      ; MIDI ermittelte Soll-Länge
-                      CONSTANT c_midi_len_base, 5C
-                      CONSTANT s_midi_1_len, 5C
-                      CONSTANT s_midi_2_len, 5D
-                      CONSTANT s_midi_avr_len, 5E
-                      CONSTANT s_midi_sam_len, 5F
-                      ; MIDI-Datenbyte-Zähler
-                      CONSTANT c_midi_counter_base, 60
-                      CONSTANT s_midi_1_counter, 60
-                      CONSTANT s_midi_2_counter, 61
-                      CONSTANT s_midi_avr_counter, 62
-                      CONSTANT s_midi_sam_counter, 63
-                      ; MIDI-Datenempfangs-Flags
-                      CONSTANT c_midi_rxflag_base, 64
-                      CONSTANT s_midi_1_rxflag, 64
-                      CONSTANT s_midi_2_rxflag, 65
-                      CONSTANT s_midi_avr_rxflag, 66
-                      CONSTANT s_midi_sam_rxflag, 67
-                      ; MIDI-Datenempfang: System Commons und deren Daten ignorieren
-                      CONSTANT c_midi_ignoreflag_base, 68
-                      CONSTANT s_midi_1_ignoreflag, 68
-                      CONSTANT s_midi_2_ignoreflag, 69
-                      CONSTANT s_midi_avr_ignoreflag, 6A
-                      CONSTANT s_midi_sam_ignoreflag, 6B
-                      ; MIDI-Datenempfang: System Exclusive Flag
-                      CONSTANT c_midi_SysExFlag_base, 6C
-                      CONSTANT s_midi_1_SysExFlag, 6C
-                      CONSTANT s_midi_2_SysExFlag, 6D
-                      CONSTANT s_midi_avr_SysExFlag, 6E
-                      CONSTANT s_midi_sam_SysExFlag, 6F
-                      ;
-                      ;
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ; Register Renames
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ;
-                      ; evt. für schnelleren Zugriff benutzen
-                      NAMEREG sF, midi_cmd_idx
-                      NAMEREG sE, midi_ignoreflag_idx
-                      NAMEREG sD, midi_SysExFlag_idx
-                      NAMEREG sC, midi_counter_idx
-                      ;
-                      ; häufig benutzte Variablen
-                      NAMEREG sB, sB_keystatus_lwr
-                      NAMEREG sA, sA_matrix_key            ; Für FatarScan-Abfrage, Taste innerhalb Gruppe, nur in local_ benutzt
-                      NAMEREG s9, s9_manual_select         ; aktuelles Manual, 0 = upper, 1 = lower, 2 = bass
-                      NAMEREG s8, s8_msb                   ; Zustand gedrückte Taste MIDI-Empfang, msb für Multiply
-                      NAMEREG s7, s7_lsb                   ; Zustand gedrückte Taste eigene Manuale, lsb für Multiply
-                      NAMEREG s6, s6_idx_ptr               ; universeller Index-Zeiger, auch für page select
-                      NAMEREG s5, s5_scan_key              ; aktuelle Taste, Zähler ab 0 bis Tastenanzahl
-                      NAMEREG s4, s4_contacts              ; Für Event-Routine
-                      NAMEREG s3, s3_keystatus             ; Zustand gedrückte Taste Manual und allgemein
-                      ; s0, s1, s2 als Universal-Akkus
-                      ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                      ;
-                      JUMP cold_start
-                      ;
-                      STRING FCK$, "FUCK TRUMP FUCK AFD FUCK NAZIS"
-                      LOAD&RETURN s0, FCK$
-                      ;
+  ; ##############################################################################
+  ; ############################ MPX-RAM-Organisation ###########################
+  ; ##############################################################################
+  ;
+  ; Ein/Ausschalten der HX3-Tastenkontakte erfolgt durch Schreiben der
+  ; Kontaktdaten in ein Dual-Port-RAM, das sogerannte MPX-RAM.
+  ; Jede Taste(nspalte) belegt eine Adresse,
+  ; so dass das tiefste "C" immer Adresse 0 hat, das höchste "C" Adresse 60.
+  ; Für jedes Manual stehen 8 Bits des 18-Bit-Datenbusses zur Verfügung,
+  ; für das Pedal 2 (sonst ungenutzte Paritätsbits). Jeder Teil kann getrennt geschrieben/gelesen werden.
+  ; MPX-RAM besteht aus 16 Pages je 64 Worte, 16 Bit plus zwei "Parity"-Bits,
+  ; die hier für den Pedal-Status benutzt werden. Auswahl der Page über RAM_PAGE.
+  ; MSB, LSB und Parity-Bits können getrennt über STROBEs geschrieben werden.
+  ;
+  ; Page 0 dient direkt als Freigabe für Tastenkontakte, im FPGA als
+  ; zwei CONTACTS-Bytes für Upper- und Lower-Gating:
+  ;
+  ; ##### LOWER #####   ##### UPPER #####  -  Bytes
+  ; 7 MSN 4  3 LSN 0    7 MSN 4  3 LSN 0   -  Nibbles
+  ; #NOISE#  #STEAD#    #NOISE#  #STEAD#
+  ; - C B A  L C B A    - C B A  L C B A   -  Bits
+  ;
+  ; Dabei wird Wert ABC jeweils anhand des folgenden Schemas dekodiert,
+  ; mit ABC = Anzahl eingeschalteter Tastenkontakte lt. folgender Tabelle, L = Level-Bit (0 = halber Pegel)
+  ; ABC Kontakte Busbar 15..0
+  ; 0   0000000000000000, ; alle OFF
+  ; 1   0000000000100000, ; Stufe 1...
+  ; 2   0000000000100100,
+  ; 3   0000000010100100,
+  ; 4   0011000010100110,
+  ; 5   0011000111100110,
+  ; 6   1011101111101111,
+  ; 7   1111111111111111 ; bis Stufe 7, alle ON
+  ;
+  ; Es ist somit (ggf. für Opto/Hallsensor-Tastaturen) möglich, das Click-Noise- und Steady-Signal getrennt
+  ; in 8 Stufen und mit zwei Pegelstufen (halber/voller) nacheinander einzuschalten, um das Kontaktprellen
+  ; und den Kontakt-Übergangswiderstand zu simulieren.
+  ;
+  ; Verhalten Tastenkontakt-Bits nach Dekodierung ABC -> Kontakte aus obiger Tabelle
+  ; noise_bb_bit  steady_bb_bit  level_full_bit  Resultat
+  ; 0             0              0               OFF
+  ; 1             0              0               HALF NOISE
+  ; 0             1              0               HALF STEADY
+  ; 1             1              0               HALF NOISE, HALF STEADY
+  ; 0             0              1               OFF
+  ; 1             0              1               FULL NOISE
+  ; 0             1              1               FULL STEADY
+  ; 1             1              1               FULL STEADY
+  ;
+  ; Pedalkontakt CONT_PEDAL ist an Bit(0) angeschlossen, Bit (1) kann als Scratch dienen.
+  ; Die Nibbles können in pb_scanif.vhd einzeln gelesen werden!
+  ; PAGE 1 als Soft-Timer für Tastenkontakte
+  ; PAGE 2 als Soft-Timer für Noise
+  ; PAGEs 6 bis 15 können nach Belieben verwendet werden.
+  ;
+  ; MPX RAM_PAGE Offsets
+  ; Seitenaufteilung in 64-Byte-Seiten, Auswahl über RAM_PAGE
+  ;
+  CONSTANT c_page_vcontacts, 00       ; virtuelle Tastenkontakte, 0..60, direktes Lesen und Schreiben
+  CONSTANT c_page_dyntimer, 01        ; Dynamik-Timer 0..60 für Tastatur-Scan
+  CONSTANT c_page_noisetimer, 02      ; Noise-Timer 0..60
+  CONSTANT c_page_keystate, 03        ; State Machine Tastenspalte 0..60
+  CONSTANT c_page_velocity, 04        ; Über Timer-Berechnung ermittelte Keyboard-Dynamik für Tasten 0..60
+  CONSTANT c_page_earlystep, 05       ; Eigene Tastatur Early-Zustand für Tasten 0..60
+  CONSTANT c_page_latestep, 06        ; Eigene Tastatur 2 Stufen für Tasten 0..60, aus Dynamik errechnet
+  CONSTANT c_page_sostenuto, 07       ; Sostenuto-Flags 0..60
+  CONSTANT c_page_keycontacts, 08     ; vorheriger Tastenzustand 0..60
+  CONSTANT c_page_xb2data, 09         ; Dynamik-Werte XB2 Upper
+  CONSTANT c_page_presetkeys, 09      ; Preset-Tastenzustand Upper, Lower
+  ;
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ; Portadressen bidirektional
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ;
+  ; $00 bis $07 Einzelbits SCANPORT Eingang, für Opto und Fatar
+  CONSTANT SCANPIO1, 00               ; Group Clock 4024/4051 MPX
+  CONSTANT SCANPIO2, 01               ; Group Reset 4024/4024 MPX
+  CONSTANT SCANPIO3, 02               ; Break 1st Contact von 4051, Upper
+  CONSTANT SCANPIO4, 03               ; Make 2nd Contact von 4051, Upper
+  CONSTANT SCANPIO5, 04               ; Key Clock 4017
+  CONSTANT SCANPIO6, 05               ; Key Reset 4017
+  CONSTANT SCANPIO7, 06               ; Break 1st Contact von 4051, Lower
+  CONSTANT SCANPIN8, 07               ; Make 2nd Contact von 4051, Lower, nur Eingang!
+  ; $00 bis $07 Einzelbits AUXPORT Eingang, für OrganScan/HOAX5 mit 4014 und Bass13/25
+  CONSTANT AUXPIO1, 08                ; Clock SR 4014
+  CONSTANT AUXPIO2, 09                ; Parallel Load SR 4014
+  CONSTANT AUXPIO3, 0A                ; Shift Out Upper SR 4014
+  CONSTANT AUXPIO4, 0B                ; Shift Out Lower SR 4014
+  CONSTANT AUXPIO5, 0C                ; Shift Out Pedal SR 4014
+  CONSTANT AUXPIO6, 0D                ; frei für Debug-Zwecke
+  ;CONSTANT AUXPIO7, 0E                ; ACHTUNG: Für Rotary-LED-PWM benutzt
+  CONSTANT AUXPIN8, 0F                ; unbenutzt, nur Eingang!
+  ;
+  CONSTANT K_ACK, 00                  ; für XB2, SCANPIO1
+  CONSTANT K_ENALWR, 01               ; für XB2, SCANPIO2
+  CONSTANT K_ENAUPR, 02               ; für XB2, SCANPIO3
+  CONSTANT K_RST, 03                  ; für XB2, SCANPIO4
+  CONSTANT K_EMPTY, 0E                ; für XB2, Data Present (D6) AUXPIO7
+  CONSTANT K_STB, 0F                  ; für XB2, AUXPIN8
+  CONSTANT K_DATA, 18                 ; für XB2, AUXPORT
+  ;
+  CONSTANT SCANPIN, 10                ; Fatar Scan Port gesamt READ
+  CONSTANT SCANPORT, 10               ; Fatar Scan Port gesamt WRITE
+  CONSTANT SCANPORT_DDR, 11           ; Fatar Scan Port Data Direction
+  CONSTANT AUXPIN, 18                 ; SR4014/Auxiliary Port gesamt READ
+  CONSTANT AUXPORT, 18                ; SR4014/Auxiliary Port gesamt WRITE
+  CONSTANT AUXPORT_DDR, 19            ; SR4014/Auxiliary Port Data Direction
+  CONSTANT SWITCHPIN, 32              ; Switches Port gesamt READ
+  CONSTANT SWITCHPORT, 28             ; Switches Port gesamt WRITE
+  CONSTANT SWITCHPORT_DDR, 29         ; Switches Port Data Direction
+  ; Output ports
+  CONSTANT WR_BASE, 20                ; Schreibzugriff indirekt
+  CONSTANT WR_UPPER, 20               ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
+  CONSTANT WR_LOWER, 21               ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Lower (1 Byte)
+  CONSTANT WR_PEDAL, 22               ; Schreibzugriff erzeugt Write für Pedal-Bits (2 Bits)
+  CONSTANT MIDI_CMD, 30               ; MIDI-Befehl
+  CONSTANT MIDI_DB1, 31
+  CONSTANT MIDI_DB2, 32
+  CONSTANT MIDI_STR, 33               ; MIDI Strobe für AVR, neg. Flanke
+  CONSTANT STATUS, 34                 ; STATUS an AVR SPI, Bit 0 bis 3 durch PB schreibbar, Bit 4 und 5 direkt SPI MIDI FIFO STAT
+  CONSTANT KEYS_ON_UPR, 35            ; Bit 0: auf Upper sind Tasten gedrückt
+  CONSTANT KEYS_ON_LWR, 36            ; Bit 0: auf Lower sind Tasten gedrückt
+  ; CONSTANT BASS_ENV, 37                 ; UNUSED
+  CONSTANT PEDAL_DOWN, 38             ; Bit 0
+  CONSTANT PED_ACC_ENA, 39            ; für pedal click noise
+  CONSTANT MIDI_OUT_SEL, 3A           ; auf 4-fach Multiplexer
+  CONSTANT MIDI_USE_NEW_ROUTING, 3B   ; neues MIDI-Routing mit separatem Eingang 3 aktiv wenn '1', vom Scan-Treiber zu setzen
+  CONSTANT ENA_PWM, 3C                ; Enable PWM-Ausgabe für Expander-LEDs
+  ; MIDI_OUT_SEL: 0 = MIDI_TX_DIN, 1 = MIDI_IN_1, 2 = MIDI_IN_2, 3 = MIDI_FROM_SAM (USB)
+  ; Universal-Timer, hier für Scan-Durchlauf, 255 = 5,22 ms
+  ; wird mit jedem SYNC alle 20,48 µs dekrementiert bis 0 erreicht
+  CONSTANT SCANTIMER_VAL, 3D          ; Schreiben des neuen Wertes startet Timer
+  CONSTANT SCANTIMER_ZERO, 3E         ; Flag wenn 0 erreicht
+  CONSTANT NOISE_FREQ, 3F             ; bestimmt Noise-Frequenz
+  CONSTANT RAM_PAGE, 40               ; Seitenadresse zum einfacheren Zugriff, Page 0 = MPX Dual Port
+  CONSTANT RAM_ADDR, 41               ; für alle Zugriffe gültig
+  CONSTANT RAM_WRDATA, 42             ; zu schreibende Daten
+  ;
+  CONSTANT MIDI_TX_DIN, 80            ; MIDI UART-Tx-FIFO an DIN MAIN OUT, MIDI_STRB_128
+  CONSTANT MIDI_TX_SAM, 81            ; MIDI UART-Tx-FIFO an SAM5504 DSP, MIDI_STRB_129
+  ;
+  CONSTANT DYN_TABLE, 82              ; LC Dyntable Daten Lesen, 0..127
+  CONSTANT DYN_TABLE_ADDR, 82         ; LC Dyntable Adresse Schreiben, 0..255, Timerwert 0 = schnellste Taste, 255 = langsamste Taste
+  ;
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ; Input Ports
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ; Flags für SPI-Empfang:
+  ; Bit 0 = Daten wurden geschrieben (wird durch Lesen der SPI-Register gelöscht)
+  ; Bit 1 = AVR-MIDI FIFO Daten im Buffer,
+  ; Bit 2 = AVR-MIDI FIFO Buffer halb voll
+  ; Bit 3 = AVR-MIDI FIFO Buffer voll
+  ;
+  CONSTANT FEATURE_SPI_FLAG, 30       ; war "0000000" & spiflag, jetzt "0000001" & spiflag wenn neues FPGA
+  CONSTANT TX_STATUS, 31              ; Bit 0 = TX DIN (1) voll, Bit 1 = TX SAM (2) voll
+  CONSTANT RD_BASE, 34                ; für indirektes Lesen
+  CONSTANT RD_UPPER, 34               ; Upper-Byte vom MPX-RAM
+  CONSTANT RD_LOWER, 35               ; Lower-Byte vom MPX-RAM
+  CONSTANT RD_PEDAL, 36               ; Pedal-Bits vom MPX-RAM (1:0)
+  CONSTANT MIDI_IN1, 38
+  CONSTANT MIDI_IN1_STATUS, 39        ; "0000" & midi_1_full & midi_1_half & midi_1_datapresent & '0';
+  CONSTANT MIDI_IN2, 3A
+  CONSTANT MIDI_IN2_STATUS, 3B        ; "0000" & midi_2_full & midi_2_half & midi_2_datapresent & '0';
+  CONSTANT MIDI_AVR, 3C               ; MIDI vom AVR über SPI
+  CONSTANT MIDI_AVR_STATUS, 3D        ; "0000" & avrfifo_full & avrfifo_half & avrfifo_datapresent & avrmidiflag
+  ; Können benutzt werden, wenn FEATURE_SPI_FLAG = "0000001x" ist (neues FPGA mit eigenem FIFO für SAM5504)
+  ; und MIDI_USE_NEW_ROUTING $3B vom Scan-Treiber auf $01 gesetzt wurde
+  CONSTANT MIDI_IN_SAM, 37            ; MIDI IN SAM auf eigenem FIFO (neu, separat statt mit MIDI IN2 verANDet)
+  CONSTANT MIDI_SAM_STATUS, 33        ; "0000" & midi_3_full & midi_3_half & midi_3_datapresent & '0';
+  CONSTANT RND_NUMBER, 3F             ; Zufallswert 8 Bit
+  ;
+  ; Werte vom AVR-SPI
+  CONSTANT SPI_MIDICH, 24             ; Adresse $04 von außen (AVR)
+  CONSTANT SPI_MIDIOPT, 25
+  CONSTANT SPI_SPLITMODE, 26
+  CONSTANT SPI_SPLITON, 27            ; 7 von außen (AVR)
+  CONSTANT SPI_SPLITPOINT, 28         ; 8 von außen (AVR)
+  CONSTANT SPI_CLICKLEN, 29
+  CONSTANT SPI_GENTRANSPOSE, 2A       ; 10 = Generator Transpose
+  CONSTANT SPI_CONFIG_1, 2B           ; 11 = EARLY_KEY (Bit 0), (LUBED_CONTACTS (Bit 1), VelocityFactor (Bit 7..2)
+  ; SPI_AVR_MIDI, 2C ; AVR-MIDI-Daten, FIFO-Eingang
+  CONSTANT SPI_KEYTRANSPOSE, 2D       ; Key Transpose (local keyboard)
+  CONSTANT SPI_MIDISEND_DISABLES, 2E  ; Bit 0..2 verhindern Senden der Manual-Daten wenn "1"
+  CONSTANT SPI_PWM_LOCALDISABLES, 2E  ; Bit 0..2 Local Enables, Bit 4..7 LED PWM für MIDI Scantreiber
+  CONSTANT SPI_AUXPORT, 2F            ; für Expander-LEDs in HX3.7
+  ;
+  CONSTANT c_state_idle, 00           ; für Tastenabfrage-Timer, OFF gesendet
+  CONSTANT c_state_forward, 01        ; für Tastenabfrage-Timer, zählend
+  CONSTANT c_state_stopped, 02        ; für Tastenabfrage-Timer, angehalten
+  CONSTANT c_state_reverse, 03        ; für Tastenabfrage-Timer, bewegt sich zurück - nicht benutzt!
+  CONSTANT c_state_idle_pedal, 00     ; für Tastenabfrage-Timer, Ruhezustand
+  CONSTANT c_state_on_pedal, 01       ; für Tastenabfrage-Timer, angehalten
+  ;
+  CONSTANT c_key_idle, 00             ; für Tastenabfrage, Ruhezustand
+  CONSTANT c_key_moving, 01           ; für Tastenabfrage, in Bewegung
+  CONSTANT c_key_dirty, 02            ; für Tastenabfrage, Ende erreicht (dirty)
+  CONSTANT c_key_on, 03               ; für Tastenabfrage, Ende erreicht
+  CONSTANT c_pedal_idle, 00           ; für Tastenabfrage, Ruhezustand
+  CONSTANT c_pedal_on, 01             ; für Tastenabfrage, angehalten
+  ;
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ; Picoblaze Scratchpad Memory
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ;
+  CONSTANT s_split_on, 00             ; Letzter Split-Zustand
+  CONSTANT s_splitpoint, 01           ; Tastennummer von SPI-AVR
+  CONSTANT s_splitmode, 02
+  CONSTANT s_transpose, 03            ; Tongenerator/MIDI-IN-Transpose
+  ;
+  CONSTANT s_keystatus_upper, 10      ; für Tastenabfrage, vorheriger Tastenzustand
+  CONSTANT s_keystatus_lower, 11
+  CONSTANT s_keystatus_pedal, 12
+  ;
+  CONSTANT s_tdrive, 20'd             ; für Tastenabfrage, aktueller T-Drive-Wert, 0..7 für Fatar und Pulse
+  CONSTANT s_mkbr_count, 21'd         ; für Tastenabfrage, aktuelles Bitpaar
+  ;
+  CONSTANT s_keycount_upper, 32'd
+  CONSTANT s_keycount_lower, 33'd
+  CONSTANT s_keycount_pedal, 34'd     ; Dummy für Pedal, nicht belegen!
+  ;
+  CONSTANT s_keypressed_acc, 35'd     ; Flag, ob Taste gedrückt wurde seit letztem Scan
+  ;
+  CONSTANT s_scan_key_save, 36'd
+  CONSTANT s_velocityfac, 38'd        ; Faktor für Timer-Dekrement
+  CONSTANT s_pedal_on, 39'd           ; Bass-Flag Trigger für Hüllkurve
+  CONSTANT s_midich, 40'd             ; eingestellter MIDI-Kanal
+  ;
+  CONSTANT s_switches_old, 43'd       ; kommt als Bit 1 von Split_ON (0000 00X0)
+  CONSTANT s_sustain_upr, 44'd
+  CONSTANT s_sustain_lwr, 45'd
+  ; 46 Dummy für Pedal, immer 0, nicht belegen!
+  CONSTANT s_sosten_upr, 47'd         ; Empfangenes CC 64, Sostenuto aktiv
+  CONSTANT s_sosten_lwr, 48'd
+  ; 49 Dummy für Pedal, immer 0, nicht belegen!
+  CONSTANT s_local_key, 50'd          ; für local out, enthält aktuelle Taste einschließlich Offset
+  CONSTANT s_local_dyn, 51'd
+  CONSTANT s_pedal_noisecounter, 52'd
+  CONSTANT s_scanloop_counter, 53'd
+  CONSTANT s_lastkey_on, 54'd         ; letzte gedrückte Taste für Split
+  CONSTANT s_clicklen, 55'd           ; Timer-Startwert
+  CONSTANT s_last_keytime, 56'd
+  ;
+  ;
+  CONSTANT s_vcont_upper, 61'd        ; gleichzeitig von Event gelesene Kontakt-Zustände
+  CONSTANT s_vcont_lower, 62'd
+  CONSTANT s_vcont_pedal, 63'd
+  ;
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ; Extended scratchpad memory bei KCPSM6, hier fuer MIDI, ab 64'd
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ;
+  ; MIDI-Daten für Interpreter/Dispatcher
+  CONSTANT s_midi_cmd, 40             ;  = 64'd
+  CONSTANT s_midi_data1, 41
+  CONSTANT s_midi_data2, 42
+  CONSTANT s_midi_len, 43
+  CONSTANT s_midi_cmd_masked, 44      ; upper Nibble
+  CONSTANT s_midi_chan_masked, 45     ; lower Nibble
+  CONSTANT s_midi_activesensing, 46   ; Zähler/Timer für MIDI Active Sensing
+  CONSTANT s_midi_sam_has_fifo, 47    ; ist 01 wenn neues FPGA mit separatem SAM-FIFO
+  ; Indizierbare MIDI-Empfangs-Variablen für 4 MIDI-Eingänge
+  ; MIDI Command per Polling vom FIFO
+  CONSTANT c_midi_cmd_base, 50
+  CONSTANT s_midi_1_cmd, 50
+  CONSTANT s_midi_2_cmd, 51
+  CONSTANT s_midi_avr_cmd, 52
+  CONSTANT s_midi_sam_cmd, 53
+  ; MIDI Datenbyte 1 per Polling vom FIFO
+  CONSTANT c_midi_data1_base, 54
+  CONSTANT s_midi_1_data1, 54
+  CONSTANT s_midi_2_data1, 55
+  CONSTANT s_midi_avr_data1, 56
+  CONSTANT s_midi_sam_data1, 57
+  ; MIDI Datenbyte 2 per Polling vom FIFO
+  CONSTANT c_midi_data2_base, 58
+  CONSTANT s_midi_1_data2, 58
+  CONSTANT s_midi_2_data2, 59
+  CONSTANT s_midi_avr_data2, 5A
+  CONSTANT s_midi_sam_data2, 5B
+  ; MIDI ermittelte Soll-Länge
+  CONSTANT c_midi_len_base, 5C
+  CONSTANT s_midi_1_len, 5C
+  CONSTANT s_midi_2_len, 5D
+  CONSTANT s_midi_avr_len, 5E
+  CONSTANT s_midi_sam_len, 5F
+  ; MIDI-Datenbyte-Zähler
+  CONSTANT c_midi_counter_base, 60
+  CONSTANT s_midi_1_counter, 60
+  CONSTANT s_midi_2_counter, 61
+  CONSTANT s_midi_avr_counter, 62
+  CONSTANT s_midi_sam_counter, 63
+  ; MIDI-Datenempfangs-Flags
+  CONSTANT c_midi_rxflag_base, 64
+  CONSTANT s_midi_1_rxflag, 64
+  CONSTANT s_midi_2_rxflag, 65
+  CONSTANT s_midi_avr_rxflag, 66
+  CONSTANT s_midi_sam_rxflag, 67
+  ; MIDI-Datenempfang: System Commons und deren Daten ignorieren
+  CONSTANT c_midi_ignoreflag_base, 68
+  CONSTANT s_midi_1_ignoreflag, 68
+  CONSTANT s_midi_2_ignoreflag, 69
+  CONSTANT s_midi_avr_ignoreflag, 6A
+  CONSTANT s_midi_sam_ignoreflag, 6B
+  ; MIDI-Datenempfang: System Exclusive Flag
+  CONSTANT c_midi_SysExFlag_base, 6C
+  CONSTANT s_midi_1_SysExFlag, 6C
+  CONSTANT s_midi_2_SysExFlag, 6D
+  CONSTANT s_midi_avr_SysExFlag, 6E
+  CONSTANT s_midi_sam_SysExFlag, 6F
+  ;
+  ;
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ; Register Renames
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ;
+  ; evt. für schnelleren Zugriff benutzen
+  NAMEREG sF, midi_cmd_idx
+  NAMEREG sE, midi_ignoreflag_idx
+  NAMEREG sD, midi_SysExFlag_idx
+  NAMEREG sC, midi_counter_idx
+  ;
+  ; häufig benutzte Variablen
+  NAMEREG sB, sB_keystatus_lwr
+  NAMEREG sA, sA_matrix_key           ; Für FatarScan-Abfrage, Taste innerhalb Gruppe, nur in local_ benutzt
+  NAMEREG s9, s9_manual_select        ; aktuelles Manual, 0 = upper, 1 = lower, 2 = bass
+  NAMEREG s8, s8_msb                  ; Zustand gedrückte Taste MIDI-Empfang, msb für Multiply
+  NAMEREG s7, s7_lsb                  ; Zustand gedrückte Taste eigene Manuale, lsb für Multiply
+  NAMEREG s6, s6_idx_ptr              ; universeller Index-Zeiger, auch für page select
+  NAMEREG s5, s5_scan_key             ; aktuelle Taste, Zähler ab 0 bis Tastenanzahl
+  NAMEREG s4, s4_contacts             ; Für Event-Routine
+  NAMEREG s3, s3_keystatus            ; Zustand gedrückte Taste Manual und allgemein
+  ; s0, s1, s2 als Universal-Akkus
+  ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  ;
+  JUMP cold_start
+  ;
+  STRING FCK$, "FUCK TRUMP FUCK AFD FUCK NAZIS"
+  LOAD&RETURN s0, FCK$
+  ;

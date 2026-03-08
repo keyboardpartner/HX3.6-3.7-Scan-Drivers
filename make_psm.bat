@@ -8,6 +8,11 @@ if exist %~n1.psm (
   copy %~n1.dat .\bin\scan_%~n1.dat
   copy %~n1.fmt %~n1.psm
   copy midi_io.fmt midi_io.psm
+  copy states.fmt states.psm
+  copy timers.fmt timers.psm
+  copy registers.fmt registers.psm
+  copy init.fmt init.psm
+  copy events_mpx.fmt events_mpx.psm
   del *.fmt
   del *.log
   del *.hex

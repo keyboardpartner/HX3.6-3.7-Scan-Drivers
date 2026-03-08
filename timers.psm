@@ -1,121 +1,121 @@
-                        ; ##############################################################################
-                        ;
-                        ;      ####### ### #     # ####### ######
-                        ;         #     #  ##   ## #       #     #
-                        ;         #     #  # # # # #       #     #
-                        ;         #     #  #  #  # #####   ######
-                        ;         #     #  #     # #       #   #
-                        ;         #     #  #     # #       #    #
-                        ;         #    ### #     # ####### #     #
-                        ;
-                        ; ##############################################################################
-                        ; Hilfsroutinen: Werte in Timer/Scratch-RAM lesen oder schreiben
-                        ; s9_manual_select = 0 für Upper, s9_manual_select = 1 für Lower Manual
-                        ; ##############################################################################
-                        ;
-  start_noisetimer_fast:
-                        ; Noise-Timer der aktuellen Taste starten, sofern nicht bereits geschehen
-                        CALL get_noisetimer
-                        COMPARE s0, 00
-                        RETURN NZ                             ; wenn bereits gestartet
-                        ;
-                        INPUT s1, RND_NUMBER                  ; zufällige Länge
-                        AND s1, 03                            ; 0 bis 3
-                        FETCH s0, s_clicklen                  ; Timer-Startwert,  237..252
-                        SUB s0, s1                            ; um Zufallswert verlängern
-                        JUMP set_noisetimer
-                        ;
-  start_noisetimer_slow:
-                        ; Noise-Timer der aktuellen Taste starten, sofern nicht bereits geschehen
-                        CALL get_noisetimer
-                        COMPARE s0, 00
-                        RETURN NZ                             ; wenn bereits gestartet
-                        ;
-                        INPUT s1, RND_NUMBER                  ; zufällige Länge
-                        AND s1, 01                            ; 0 oder 1
-                        FETCH s0, s_clicklen                  ; Timer-Startwert,  237..255
-                        SR1 s0                                ; Timer-Startwert verdoppelt,  246..255
-                        SUB s0, s1                            ; um kleinen Zufallswert verlängern
-                        SUB s0, 01                            ; um kleinen Festwert verlängern
-        set_noisetimer:
-                        LOAD s6_idx_ptr, c_page_noisetimer
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-                        JUMP ramwrite_61
-      reset_noisetimer:
-                        LOAD s0, 00
-                        JUMP set_noisetimer
-                        ;
-        get_noisetimer:
-                        ; Taste in s5_scan_key, gelesene Daten später in s0
-                        LOAD s6_idx_ptr, c_page_noisetimer
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-                        OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer in s0
-                        LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, RD_BASE
-                        INPUT s0, (s6_idx_ptr)                ; Upper, Lower oder Pedal Read
-                        RETURN                                ; Zustand in s0
-                        ;
-                        ; ##############################################################################
-                        ; Dynamik- und Noise-Timer für beide Manuale aktualisieren
-                        ; geändert für neues MPX-RAM ohne Autoinkrement-Timer, 20.03.2014
-                        ; wird einmal pro Scan-Durchlauf aufgerufen, dauert ca. 27 µs
-                        ; ##############################################################################
-                        ;
-    update_noisetimers:
-                        FETCH s0, s_scanloop_counter
-                        ADD s0, 01
-                        STORE s0, s_scanloop_counter
-                        TEST s0, 01                           ; AND -> Z-Flag, Bit 0, nur jeder zweite Durchlauf
-                        RETURN Z
-                        LOAD s6_idx_ptr, c_page_noisetimer
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page Noise-Timer
-                        LOAD s5_scan_key, 00
-                        ;
-      update_timer_loop:
-                        OUTPUT s5_scan_key, RAM_ADDR
-                        ADD s5_scan_key, 01
-                        INPUT s0, RD_UPPER
-                        COMPARE s0, 00
-                        JUMP Z, update_timer_done1            ; noch nicht gestartet
-                        COMPARE s0, FF
-                        JUMP Z, update_timer_done1            ; bereits abgelaufen
-                        ADD s0, 01
-                        OUTPUT s0, RAM_WRDATA                 ; zu schreibende Daten in s0
-                        LOAD s0, 00                           ; NOP
-                        OUTPUT s0, WR_UPPER
-                        LOAD s0, 00                           ; NOP
-    update_timer_done1:
-                        INPUT s0, RD_LOWER
-                        COMPARE s0, 00
-                        JUMP Z, update_timer_done2            ; noch nicht gestartet
-                        COMPARE s0, FF
-                        JUMP Z, update_timer_done2            ; bereits abgelaufen
-                        ADD s0, 01
-                        OUTPUT s0, RAM_WRDATA                 ; zu schreibende Daten in s0
-                        LOAD s0, 00                           ; NOP
-                        OUTPUT s0, WR_LOWER
-    update_timer_done2:
-                        COMPARE s5_scan_key, c_maxkeys_plus1
-                        JUMP NZ, update_timer_loop
-                        RETURN
-                        ;
-                        ; ##############################################################################
-                        ; Delay-Routinen in ns (ca.-Werte)
-                        ; ##############################################################################
-                        ;
-                        ; 40,69 ns pro Befehl/Taktzyklus
-                        ; 81,38 ns pro Schleifendurchlauf (SUB + JUMP NZ)
-                        ;
-           delay_600ns:
-                        LOAD s0, 05                          ; Delay-Zeit, (n + 1) * 81,4 + 162,8 ns = 651 ns mit n = 5
-                        JUMP delay_loop
-           delay_400ns:
-                        LOAD s0, 03                          ; Delay-Zeit, (n + 1) * 81,4 + 162,8 ns = 488 ns mit n = 3
-                        JUMP delay_loop
-           delay_300ns:
-                        LOAD s0, 02                          ; Delay-Zeit, (n + 1) * 81,4 + 81,4 ns = 325 ns mit n = 2
-            delay_loop:
-                        SUB s0, 01                           ; 40,7 ns pro Befehl, 81,4 ns pro Schleifenduchlauf
-                        JUMP NZ, delay_loop
-                        RETURN                               ; nochmal 40,7 ns für RETURN
-                        ;
+                       ; ##############################################################################
+                       ;
+                       ;      ####### ### #     # ####### ######
+                       ;         #     #  ##   ## #       #     #
+                       ;         #     #  # # # # #       #     #
+                       ;         #     #  #  #  # #####   ######
+                       ;         #     #  #     # #       #   #
+                       ;         #     #  #     # #       #    #
+                       ;         #    ### #     # ####### #     #
+                       ;
+                       ; ##############################################################################
+                       ; Hilfsroutinen: Werte in Timer/Scratch-RAM lesen oder schreiben
+                       ; s9_manual_select = 0 für Upper, s9_manual_select = 1 für Lower Manual
+                       ; ##############################################################################
+                       ;
+start_noisetimer_fast: 
+                       ; Noise-Timer der aktuellen Taste starten, sofern nicht bereits geschehen
+                       CALL get_noisetimer
+                       COMPARE s0, 00
+                       RETURN NZ                            ; wenn bereits gestartet
+                       ;
+                       INPUT s1, RND_NUMBER                 ; zufällige Länge
+                       AND s1, 03                           ; 0 bis 3
+                       FETCH s0, s_clicklen                 ; Timer-Startwert,  237..252
+                       SUB s0, s1                           ; um Zufallswert verlängern
+                       JUMP set_noisetimer
+                       ;
+start_noisetimer_slow: 
+                       ; Noise-Timer der aktuellen Taste starten, sofern nicht bereits geschehen
+                       CALL get_noisetimer
+                       COMPARE s0, 00
+                       RETURN NZ                            ; wenn bereits gestartet
+                       ;
+                       INPUT s1, RND_NUMBER                 ; zufällige Länge
+                       AND s1, 01                           ; 0 oder 1
+                       FETCH s0, s_clicklen                 ; Timer-Startwert,  237..255
+                       SR1 s0                               ; Timer-Startwert verdoppelt,  246..255
+                       SUB s0, s1                           ; um kleinen Zufallswert verlängern
+                       SUB s0, 01                           ; um kleinen Festwert verlängern
+       set_noisetimer: 
+                       LOAD s6_idx_ptr, c_page_noisetimer
+                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
+                       JUMP ramwrite_61
+     reset_noisetimer: 
+                       LOAD s0, 00
+                       JUMP set_noisetimer
+                       ;
+       get_noisetimer: 
+                       ; Taste in s5_scan_key, gelesene Daten später in s0
+                       LOAD s6_idx_ptr, c_page_noisetimer
+                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page
+                       OUTPUT s5_scan_key, RAM_ADDR         ; Tastennummer in s0
+                       LOAD s6_idx_ptr, s9_manual_select    ; 0 oder 1
+                       ADD s6_idx_ptr, RD_BASE
+                       INPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Read
+                       RETURN                               ; Zustand in s0
+                       ;
+                       ; ##############################################################################
+                       ; Dynamik- und Noise-Timer für beide Manuale aktualisieren
+                       ; geändert für neues MPX-RAM ohne Autoinkrement-Timer, 20.03.2014
+                       ; wird einmal pro Scan-Durchlauf aufgerufen, dauert ca. 27 µs
+                       ; ##############################################################################
+                       ;
+   update_noisetimers: 
+                       FETCH s0, s_scanloop_counter
+                       ADD s0, 01
+                       STORE s0, s_scanloop_counter
+                       TEST s0, 01                          ; AND -> Z-Flag, Bit 0, nur jeder zweite Durchlauf
+                       RETURN Z
+                       LOAD s6_idx_ptr, c_page_noisetimer
+                       OUTPUT s6_idx_ptr, RAM_PAGE          ; MPX-RAM Page Noise-Timer
+                       LOAD s5_scan_key, 00
+                       ;
+    update_timer_loop: 
+                       OUTPUT s5_scan_key, RAM_ADDR
+                       ADD s5_scan_key, 01
+                       INPUT s0, RD_UPPER
+                       COMPARE s0, 00
+                       JUMP Z, update_timer_done1           ; noch nicht gestartet
+                       COMPARE s0, FF
+                       JUMP Z, update_timer_done1           ; bereits abgelaufen
+                       ADD s0, 01
+                       OUTPUT s0, RAM_WRDATA                ; zu schreibende Daten in s0
+                       LOAD s0, 00                          ; NOP
+                       OUTPUT s0, WR_UPPER
+                       LOAD s0, 00                          ; NOP
+   update_timer_done1: 
+                       INPUT s0, RD_LOWER
+                       COMPARE s0, 00
+                       JUMP Z, update_timer_done2           ; noch nicht gestartet
+                       COMPARE s0, FF
+                       JUMP Z, update_timer_done2           ; bereits abgelaufen
+                       ADD s0, 01
+                       OUTPUT s0, RAM_WRDATA                ; zu schreibende Daten in s0
+                       LOAD s0, 00                          ; NOP
+                       OUTPUT s0, WR_LOWER
+   update_timer_done2: 
+                       COMPARE s5_scan_key, c_maxkeys_plus1
+                       JUMP NZ, update_timer_loop
+                       RETURN 
+                       ;
+                       ; ##############################################################################
+                       ; Delay-Routinen in ns (ca.-Werte)
+                       ; ##############################################################################
+                       ;
+                       ; 40,69 ns pro Befehl/Taktzyklus
+                       ; 81,38 ns pro Schleifendurchlauf (SUB + JUMP NZ)
+                       ;
+          delay_600ns: 
+                       LOAD s0, 05                          ; Delay-Zeit, (n + 1) * 81,4 + 162,8 ns = 651 ns mit n = 5
+                       JUMP delay_loop
+          delay_400ns: 
+                       LOAD s0, 03                          ; Delay-Zeit, (n + 1) * 81,4 + 162,8 ns = 488 ns mit n = 3
+                       JUMP delay_loop
+          delay_300ns: 
+                       LOAD s0, 02                          ; Delay-Zeit, (n + 1) * 81,4 + 81,4 ns = 325 ns mit n = 2
+           delay_loop: 
+                       SUB s0, 01                           ; 40,7 ns pro Befehl, 81,4 ns pro Schleifenduchlauf
+                       JUMP NZ, delay_loop
+                       RETURN                               ; nochmal 40,7 ns für RETURN
+                       ;

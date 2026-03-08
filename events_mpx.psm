@@ -1,421 +1,421 @@
-                        ; ###############################################################################
-                        ;
-                        ;  ####### #     # ####### #     # #######  #####
-                        ;  #       #     # #       ##    #    #    #     #
-                        ;  #       #     # #       # #   #    #    #
-                        ;  #####   #     # #####   #  #  #    #     #####
-                        ;  #        #   #  #       #   # #    #          #
-                        ;  #         # #   #       #    ##    #    #     #
-                        ;  #######    #    ####### #     #    #     #####
-                        ;
-                        ; ###############################################################################
-                        ;
-                        ; Variablen unabhängig von Scan-Routine benutzt
-                        ; s5_scan_key: Adresse des MPX-RAMs 64 Worte
-                        ; ca. 165 µs Gesamtzeit bei 25-Tasten-Pedal
-                        ;
-        event_handling:
-                        LOAD s0, 00                           ; Start mit Taste 0
-                        STORE s0, s_keycount_upper
-                        STORE s0, s_keycount_lower
-                        STORE s0, s_pedal_on                  ; Speicher für gedrückte Taste
-                        LOAD s5_scan_key, 00                  ; Start mit Taste 12
-                        STORE s5_scan_key, s_scan_key_save
-                        ; $60=SR4014, $61=Fatar, $62=Opto, $63=MIDI, $64=OrganScan61, $65=XB2-5, $66=Fatar61 (neu), $67=Fatar73 (neu, mit Presets)
-                        ; CONSTANT c_corevers, 6x
-                        ; Early-Action-Mode nur bei Fatar2, Fatar1-61 und Fatar1-73
-                        LOAD s0, c_corevers
-                        AND s0, 0F
-                        COMPARE s0, 00                  ; SR 4014
-                        JUMP Z, event_loop
-                        COMPARE s0, 03                  ; MIDI
-                        JUMP Z, event_loop
-                        COMPARE s0, 04                  ; OrganScan61
-                        JUMP Z, event_loop
-                        COMPARE s0, 05                  ; XB2-5
-                        JUMP Z, event_loop
-                        ; Fatar2, Fatar1-61 und Fatar1-73 mit Early-Action-Mode
-                        INPUT s0, SPI_CONFIG_1                ; Early-Action-Mode?
-                        TEST s0, 01                           ; AND -> Z-Flag
-                        JUMP NZ, event_loop_early             ; Wenn Early Action ON
-            event_loop:
-                        FETCH s5_scan_key, s_scan_key_save
-                        CALL event_contacts
-                        ADD s5_scan_key, 01                   ; nächste Taste
-                        STORE s5_scan_key, s_scan_key_save
-                        COMPARE s5_scan_key, c_maxkeys_plus1  ; alle Tasten abgefragt?
-                        JUMP NZ, event_loop
-                        JUMP event_loop_exit
-                        ;
-      event_loop_early:
-                        FETCH s5_scan_key, s_scan_key_save
-                        CALL event_contacts_early
-                        ADD s5_scan_key, 01                   ; nächste Taste
-                        STORE s5_scan_key, s_scan_key_save
-                        COMPARE s5_scan_key, c_maxkeys_plus1  ; alle Tasten abgefragt?
-                        JUMP NZ, event_loop_early
-                        ;
-       event_loop_exit:
-                        LOAD s0, 01
-                        OUTPUT s0, PED_ACC_ENA                ; normal ON
-                        FETCH s0, s_pedal_on
-                        OUTPUT s0, PEDAL_DOWN                 ; ist '1' wenn irgendeine Pedaltaste gedrückt ist
-                        ;
-                        ; ------------------------------------------------------------------------------
-                        ; Pedal-Click, simpel, monophon
-                        ; ------------------------------------------------------------------------------
-                        ;
-                        COMPARE s0, 00
-                        JUMP Z, event_rst_pednoise            ; wenn kein Pedal gedrückt
-                        ;
-                        INPUT s1, SPI_CLICKLEN
-                        AND s1, 0F
-                        COMPARE s1, 00
-                        JUMP Z, event_nopedalclick
-                        SL0 s1                                ; verdoppeln wg. schnellerer Main Loop
-                        ADD s1, 04
-    event_nopedalclick:
-                        FETCH s0, s_pedal_noisecounter
-                        COMPARE s0, s1
-                        JUMP Z, event_pedal_noiseoff
-                        ADD s0, 01
-                        STORE s0, s_pedal_noisecounter
-                        INPUT s0, RND_NUMBER
-                        AND s0, 01
-                        OUTPUT s0, PED_ACC_ENA                ; Random Noise ausgeben
-                        RETURN
-                        ;
-    event_rst_pednoise: ; Reset Pedal Noise Counter
-                        LOAD s0, 00
-                        STORE s0, s_pedal_noisecounter
-  event_pedal_noiseoff:
-                        LOAD s0, 01
-                        OUTPUT s0, PED_ACC_ENA                ; normal ON
-                        RETURN
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-          event_dyn2s0:
-                        COMPARE s0, c_dyn_threshold           ; Dynamikschwelle
-                        JUMP C, event_dyn2s0_0                ; JUMP wenn kleiner
-                        LOAD&RETURN s0, 03                    ; ist schnell
-                        ;
-        event_dyn2s0_0:
-                        LOAD&RETURN s0, 01
-                        ;
-    event_dyn2s0_pedal:
-                        LOAD&RETURN s0, 03                    ; ist ON
-                        ;
-                        ; ------------------------------------------------------------------------------
-                        ;
-     event_rd_step_all:
-                        ; bereits von Scanned-RAM Dynamik umgerechnete 3 Bytes auf Adresse RAM_ADDR lesen
-                        LOAD s6_idx_ptr, c_page_latestep
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-                        LOAD s0, s0                           ; Delay!
-                        INPUT s0, RD_PEDAL
-                        STORE s0, s_keystatus_pedal           ; 0 oder 1
-                        INPUT s0, RD_LOWER
-                        STORE s0, s_keystatus_lower
-                        INPUT s3_keystatus, RD_UPPER          ; wird ohnehin gleich gebraucht
-                        RETURN
-                        ;
-    event_rd_early_all:
-                        ; 3 Bytes s_keystatus_xxx auf Adresse RAM_ADDR lesen
-                        LOAD s6_idx_ptr, c_page_earlystep
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-                        LOAD s0, s0                           ; Delay!
-                        INPUT s0, RD_PEDAL
-                        STORE s0, s_keystatus_pedal
-                        INPUT s0, RD_LOWER
-                        STORE s0, s_keystatus_lower
-                        INPUT s3_keystatus, RD_UPPER          ; wird ohnehin gleich gebraucht
-                        RETURN
-                        ;
-    event_rd_vcont_all:
-                        ; 3 Bytes s_vcont_xxx auf Adresse RAM_ADDR lesen
-                        LOAD s6_idx_ptr, c_page_vcontacts
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-                        LOAD s0, s0                           ; Delay!
-                        ;INPUT s0, RD_PEDAL
-                        ;STORE s0, s_vcont_pedal                ; nicht benötigt
-                        INPUT s0, RD_LOWER
-                        STORE s0, s_vcont_lower
-                        INPUT s4_contacts, RD_UPPER           ; wird ohnehin gleich gebraucht
-                        RETURN
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ; +++++++++++ Wird mit allen s5_scan_key-Tastennummern aufgerufen ++++++++++++++++
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-        event_contacts:
-                        OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer, hier überall gültig
-                        CALL event_rd_vcont_all               ; alte VCONTACT-Zustände in s_vcont_xxx, 3 Bytes
-                        CALL event_rd_step_all                ; ermittelten Step (Dynamik) aus Adresse s5_scan_key holen
-                        ; Umgerechneter Tastenzustand jetzt in s_keystatus_upper, s_keystatus_lower, s_keystatus_pedal
-                        JUMP event_contacts_0
-                        ;
-  event_contacts_early:
-                        OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer, hier überall gültig
-                        CALL event_rd_vcont_all               ; alte VCONTACT-Zustände in s_vcont_xxx, 3 Bytes
-                        CALL event_rd_early_all               ; Early-Tastenzustand aus Adresse s5_scan_key holen
-      event_contacts_0:
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ; UPPER
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-                        LOAD s9_manual_select, 00             ; 0 = UPPER
-                        LOAD s0, s4_contacts
-                        OR s0, s3_keystatus
-                        CALL NZ, mpx_setkey                   ; nur wenn nicht beide 0 sind
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ; LOWER
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-                        FETCH s3_keystatus, s_keystatus_lower
-                        FETCH s4_contacts, s_vcont_lower
-                        LOAD s9_manual_select, 01             ; 1 = LOWER
-                        LOAD s0, s4_contacts
-                        OR s0, s3_keystatus
-                        CALL NZ, mpx_setkey                   ; nur wenn nicht beide 0 sind
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ; PEDAL
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-                        COMPARE s5_scan_key, c_maxbasskeys
-                        RETURN NC                             ; wenn s5_scan_key > c_maxbasskeys
-                        FETCH s3_keystatus, s_keystatus_pedal
-                        LOAD s9_manual_select, 02             ; 2 = PEDAL
-                        JUMP mpx_setkey_pedal                 ; und zurück
-                        ;
-                        ;
-                        ; ###############################################################################
-                        ;
-                        ;      #     # ######  #     #
-                        ;      ##   ## #     #  #   #
-                        ;      # # # # #     #   # #
-                        ;      #  #  # ######     #
-                        ;      #     # #         # #
-                        ;      #     # #        #   #
-                        ;      #     # #       #     #
-                        ;
-                        ; ###############################################################################
-                        ; für alle Manuale, muss wg. Noise-Timer-Update ständig aufgerufen werden
-                        ; ##############################################################################
-                        ;
-            mpx_setkey:
-                        ; Offsets und Split auswerten, virtuelle Tastenkontakte setzen
-                        ; scan_addr ist jetzt innerhalb Generator-Bereich 0..60
-                        ; Letzten Kontakt-Zustand holen und merken. Wir verwenden diesen Wert
-                        ; auch gleich zum Ermitteln der tatsächlich eingeschalteten Tasten.
-                        ;
-                        COMPARE s4_contacts, 00               ; alter Zustand vom letzen Durchlauf
-                        JUMP Z, mpx_onoff
-                        ; s_keycount_* bei tatsächlich klingenden Noten erhöhen
-                        LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, s_keycount_upper      ; Basisadresse
-                        FETCH s0, (s6_idx_ptr)
-                        ADD s0, 01
-                        STORE s0, (s6_idx_ptr)
-                        ; scan_addr für Split merken, Taste is ON
-                        FETCH s0, s_scan_key_save
-                        STORE s0, s_lastkey_on
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ; Zugriff auf die virtuellen Tastenkontakte
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-             mpx_onoff:
-                        ; Sostenuto-Flag setzen, wenn SOSTENUTO aktiv und KEY ON
-                        COMPARE s3_keystatus, 00
-                        JUMP Z, mpx_off                       ; wenn aktueller Zustand OFF
-                        COMPARE s4_contacts, 0F
-                        RETURN Z                              ; ist bereits ganz an, nichts machen
-                        ; Tastenkontaktzustand hat sich auf ON geändert
-                        ; Flag setzen, wenn Sostenuto-Pedal NICHT aktiv ist und Taste gedrückt wird.
-                        ; Die dann gedrückten Tasten werden beim Ausschalten übersprungen, d.h. bleiben an
-                        LOAD s6_idx_ptr, s9_manual_select     ; Sostenuto-Pedal für dieses Manual?
-                        ADD s6_idx_ptr, s_sosten_upr
-                        FETCH s0, (s6_idx_ptr)
-                        XOR s0, FF                            ; invertieren
-                        AND s0, s3_keystatus
-                        ; s0 ist EIN, wenn Taste EIN und Sostenuto AUS
-                        CALL ramwrite_sostnflag_61
-                        ;
-                        COMPARE s3_keystatus, 01
-                        JUMP Z, mpx_slow                      ; nur 1. Kontakt, slow inc
-                        JUMP mpx_fast                         ; 1. und/oder 2. Kontakt
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-               mpx_off:
-                        COMPARE s4_contacts, 00               ; vorheriger Zustand
-                        RETURN Z                              ; ist bereits ganz aus, nichts machen
-                        ; Tastenkontaktzustand hat sich auf OFF geändert
-                        LOAD s6_idx_ptr, s9_manual_select     ; Sostenuto-Pedal für dieses Manual?
-                        ADD s6_idx_ptr, s_sosten_upr
-                        FETCH s0, (s6_idx_ptr)
-                        COMPARE s0, 00
-                        JUMP Z, mpx_off_0                     ; Sostenuto ist aus
-                        CALL ramread_sostnflag_61
-                        COMPARE s0, 00
-                        ; die bei Sostenuto NICHT gedrückten Tasten beim Ausschalten überspringen
-                        RETURN NZ
-             mpx_off_0:
-                        LOAD s6_idx_ptr, s9_manual_select     ; Sustain-Pedal für dieses Manual?
-                        ADD s6_idx_ptr, s_sustain_upr
-                        FETCH s0, (s6_idx_ptr)
-                        COMPARE s0, 00
-                        RETURN NZ                             ; nicht abschalten, Sustain ist aktiv
-                        CALL reset_noisetimer
-                        LOAD s0, s4_contacts                  ; vorheriger Zustand
-                        AND s0, 0F                            ; Noise wegmaskieren
-                        LOAD s1, s0                           ; Steady wird jetzt Noise
-                        SL0 s1                                ; altes Steady-Nibble in oberes Noise-Nibble verschieben
-                        SL0 s1
-                        SL0 s1
-                        SL0 s1
-                        AND s1, 70                            ; Noise ohne MSBit (RFU)
-                        SR0 s0                                ; Steady-Zustand halbieren, immer halber Pegel
-                        INPUT s2, SPI_CLICKLEN
-                        AND s2, 0F
-                        COMPARE s2, 05                        ; A < B -> C set, A >= B -> C cleared
-                        CALL C, mpx_clear_s1                  ; ist kleiner als 5, dann Noise sofort löschen
-                        ; Steady- (s0) und Noise-Anteil (s1) in mpx-RAM schreiben
-                        ; Tastennnummer in s5_scan_key
-                        ; in s9_manual_select ist aktuell abgefragtes Manual
-                        OR s0, s1
-                        JUMP ramwrite_vcont_61
-                        ;
-          mpx_clear_s1:
-                        LOAD&RETURN s1, 00                    ; KeyOff-Noise löschen wenn ClickLen < 8
-                        ;
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ; Differenzierter Key ON-Click
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-                        ; Verhalten Tastenkontakt-Bits nach Dekodierung ABC -> Kontakte aus obiger Tabelle
-                        ; noise_bb_bit  steady_bb_bit  level_full_bit  Resultat
-                        ; 0             0              0               OFF
-                        ; 1             0              0               HALF NOISE
-                        ; 0             1              0               HALF STEADY
-                        ; 1             1              0               HALF NOISE, HALF STEADY
-                        ; 0             0              1               OFF
-                        ; 1             0              1               FULL NOISE
-                        ; 0             1              1               FULL STEADY
-                        ; 1             1              1               FULL STEADY
-                        ;
-              mpx_fast:
-                        ; Schneller Tastenanschlag, zweiter Kontakt geschlossen, voll gedrückt
-                        INPUT s0, SPI_CONFIG_1                ; Lubed Contacts?
-                        TEST s0, 02                           ; AND -> Z-Flag (Bit 1 gesetzt?)
-                        JUMP NZ, mpx_fast_lubed               ; Wenn Lubed Contacts Bit ON
-                        ;
-          mpx_fast_dry:
-                        ; Dry Contact, harter Klick: Erst halfnoise, dann fullnoise, dann halfnoise_halfon, dann ON
-                        CALL start_noisetimer_fast            ; ggf. starten, falls noch in Ruhe; aktueller noisetimer in s0
-                        COMPARE s0, FF                        ; Klick beendet, d.h. Timer abgelaufen?
-                        JUMP Z, mpx_fullon
-                        FETCH s2, s_clicklen
-                        SR1 s2                                ; neg. Wert halbieren = Half-Click-Länge in s2
-                        ;SR1 s2                                 ; neg. Wert nochmals halbieren = Quarter-Click-Länge in s2
-                        COMPARE s0, s2                        ; Timer-Wert noch in s0, Quarter-Click-Länge in s2
-                        JUMP NC, mpx_halfnoise_halfon         ; JUMP wenn Timer-Wert in s0 > s2, Klick kurz vor Ende?
-                        ;FETCH s2, s_clicklen
-                        ;SR1 s2                                  ; neg. Wert halbieren = halbe Click-Länge jetzt in s2
-                        ;COMPARE s0, s2                          ; Timer-Wert noch in s0, Half-Click-Länge in s2
-                        ;JUMP NC, mpx_fullnoise                  ; JUMP wenn Timer-Wert in s0 > s2, Klick halb beendet?
-                        ;JUMP mpx_halfnoise
-                        JUMP mpx_fullnoise
-                        ;
-        mpx_fast_lubed:
-                        ; Lubed Contact, weicherer Klick, wie mpx_slow, aber längere Zeit
-                        CALL start_noisetimer_fast            ; ggf. starten, falls noch in Ruhe; aktueller noisetimer in s0
-                        JUMP mpx_checkhalf
-                        ;
-              mpx_slow:
-                        ; Langsamer Tastenanschlag oder nur erster Kontakt geschlossen
-                        CALL start_noisetimer_slow            ; ggf. starten, falls noch in Ruhe; aktueller noisetimer in s0
-         mpx_checkhalf:
-                        COMPARE s0, FF                        ; Klick beendet, d.h. Timer abgelaufen?
-                        JUMP Z, mpx_fullon
-                        ; Wenn Hälfte der Klick-Länge erreicht, auf halfnoise_halfon umschalten
-                        FETCH s2, s_clicklen
-                        SR1 s2                                ; neg. Wert halbieren = halbe Click-Länge jetzt in s2
-                        COMPARE s0, s2                        ; Timer-Wert in s0, Half-Click-Länge in s2
-                        JUMP NC, mpx_halfnoise_halfon         ; JUMP wenn Timer-Wert in s0 > s2, Klick halb beendet?
-                        ; JUMP mpx_halfnoise
-         mpx_halfnoise:
-                        LOAD s0, 70                           ; half level, steady_bb_bits OFF, all noise, noise_bb_bits ON
-                        JUMP ramwrite_vcont_61
-         mpx_fullnoise:
-                        LOAD s0, 78                           ; full level, steady_bb_bits OFF, all noise, noise_bb_bits ON
-                        JUMP ramwrite_vcont_61
-            mpx_halfon:
-                        LOAD s0, 07                           ; half level, steady_bb_bits ON
-                        JUMP ramwrite_vcont_61
-  mpx_halfnoise_halfon:
-                        LOAD s0, 77                           ; half level, steady_bb_bits ON, half noise, noise_bb_bits ON
-                        JUMP ramwrite_vcont_61
-            mpx_fullon:
-                        LOAD s0, 0F                           ; full level, steady_bb_bits ON,  no noise, noise_bb_bits OFF
-                        JUMP ramwrite_vcont_61
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-      mpx_setkey_pedal:
-                        ; kleine Sonderbehandlung für Pedal, hat keine Dynamik und keine Noise-Bits:
-                        ; s3_keystatus enthält 0 (Taste aus) oder anderen Wert (Taste an),
-                        ; Falls sich neue Taste geändert hat, alte Taste löschen
-                        ; Vorher gespielte Pedaltaste löschen, Nummer der neue Pedaltaste merken
-                        ; s9_manual_select enthält 2
-                        ;
-                        COMPARE s3_keystatus, 00
-                        JUMP Z, mpx_setkey_pedal_0            ; Taste ist aus wenn 0
-                        LOAD s3_keystatus, 01                 ; nur zwei Zustände zulassen, hier ON
-                        FETCH s0, s_pedal_on                  ; Speicher für gedrückte Taste
-                        OR s0, s3_keystatus
-                        STORE s0, s_pedal_on                  ; kann innerhalb Pedalschleife '1' werden
-    mpx_setkey_pedal_0:
-                        ; get_state/set_state hier nicht benötigt, weil kein Noise berücksichtigt wird
-                        LOAD s0, s3_keystatus
-                        JUMP ramwrite_vcont_61                ; Taste in s5_scan_key, Zustand in s0
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ; Werte in MPX/Scratch-RAM setzen mit aktuellem s9_manual_select und s5_scan_key
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
-  ramread_sostnflag_61:
-                        ; Sostenuto-Flag
-                        ; Taste in s5_scan_key, gelesene Daten später in s0
-                        LOAD s6_idx_ptr, c_page_sostenuto
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-                        OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer in s0
-                        LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, RD_BASE
-                        INPUT s0, (s6_idx_ptr)                ; Upper, Lower oder Pedal Read
-                        RETURN                                ; Zustand in s0
-                        ;
-                        ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-                        ;
- ramwrite_sostnflag_61:
-                        ; zu schreibende Daten in s0
-                        LOAD s6_idx_ptr, c_page_sostenuto
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-                        JUMP ramwrite_61
-     ramwrite_vcont_61:
-                        ; zu schreibende Daten in s0
-                        LOAD s6_idx_ptr, c_page_vcontacts
-                        OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
-           ramwrite_61:
-                        ; zu schreibende Daten in s0, MPX-RAM Page muss gesetzt sein, 0..61
-                        OUTPUT s0, RAM_WRDATA
-                        OUTPUT s5_scan_key, RAM_ADDR
-                        LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
-                        ADD s6_idx_ptr, WR_BASE
-                        OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
-                        RETURN
+                       ; ###############################################################################
+                       ;
+                       ;  ####### #     # ####### #     # #######  #####
+                       ;  #       #     # #       ##    #    #    #     #
+                       ;  #       #     # #       # #   #    #    #
+                       ;  #####   #     # #####   #  #  #    #     #####
+                       ;  #        #   #  #       #   # #    #          #
+                       ;  #         # #   #       #    ##    #    #     #
+                       ;  #######    #    ####### #     #    #     #####
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ; Variablen unabhängig von Scan-Routine benutzt
+                       ; s5_scan_key: Adresse des MPX-RAMs 64 Worte
+                       ; ca. 165 µs Gesamtzeit bei 25-Tasten-Pedal
+                       ;
+       event_handling: 
+                       LOAD s0, 00                           ; Start mit Taste 0
+                       STORE s0, s_keycount_upper
+                       STORE s0, s_keycount_lower
+                       STORE s0, s_pedal_on                  ; Speicher für gedrückte Taste
+                       LOAD s5_scan_key, 00                  ; Start mit Taste 12
+                       STORE s5_scan_key, s_scan_key_save
+                       ; $60=SR4014, $61=Fatar, $62=Opto, $63=MIDI, $64=OrganScan61, $65=XB2-5, $66=Fatar61 (neu), $67=Fatar73 (neu, mit Presets)
+                       ; CONSTANT c_corevers, 6x
+                       ; Early-Action-Mode nur bei Fatar2, Fatar1-61 und Fatar1-73
+                       LOAD s0, c_corevers
+                       AND s0, 0F
+                       COMPARE s0, 00                        ; SR 4014
+                       JUMP Z, event_loop
+                       COMPARE s0, 03                        ; MIDI
+                       JUMP Z, event_loop
+                       COMPARE s0, 04                        ; OrganScan61
+                       JUMP Z, event_loop
+                       COMPARE s0, 05                        ; XB2-5
+                       JUMP Z, event_loop
+                       ; Fatar2, Fatar1-61 und Fatar1-73 mit Early-Action-Mode
+                       INPUT s0, SPI_CONFIG_1                ; Early-Action-Mode?
+                       TEST s0, 01                           ; AND -> Z-Flag
+                       JUMP NZ, event_loop_early             ; Wenn Early Action ON
+           event_loop: 
+                       FETCH s5_scan_key, s_scan_key_save
+                       CALL event_contacts
+                       ADD s5_scan_key, 01                   ; nächste Taste
+                       STORE s5_scan_key, s_scan_key_save
+                       COMPARE s5_scan_key, c_maxkeys_plus1  ; alle Tasten abgefragt?
+                       JUMP NZ, event_loop
+                       JUMP event_loop_exit
+                       ;
+     event_loop_early: 
+                       FETCH s5_scan_key, s_scan_key_save
+                       CALL event_contacts_early
+                       ADD s5_scan_key, 01                   ; nächste Taste
+                       STORE s5_scan_key, s_scan_key_save
+                       COMPARE s5_scan_key, c_maxkeys_plus1  ; alle Tasten abgefragt?
+                       JUMP NZ, event_loop_early
+                       ;
+      event_loop_exit: 
+                       LOAD s0, 01
+                       OUTPUT s0, PED_ACC_ENA                ; normal ON
+                       FETCH s0, s_pedal_on
+                       OUTPUT s0, PEDAL_DOWN                 ; ist '1' wenn irgendeine Pedaltaste gedrückt ist
+                       ;
+                       ; ------------------------------------------------------------------------------
+                       ; Pedal-Click, simpel, monophon
+                       ; ------------------------------------------------------------------------------
+                       ;
+                       COMPARE s0, 00
+                       JUMP Z, event_rst_pednoise            ; wenn kein Pedal gedrückt
+                       ;
+                       INPUT s1, SPI_CLICKLEN
+                       AND s1, 0F
+                       COMPARE s1, 00
+                       JUMP Z, event_nopedalclick
+                       SL0 s1                                ; verdoppeln wg. schnellerer Main Loop
+                       ADD s1, 04
+   event_nopedalclick: 
+                       FETCH s0, s_pedal_noisecounter
+                       COMPARE s0, s1
+                       JUMP Z, event_pedal_noiseoff
+                       ADD s0, 01
+                       STORE s0, s_pedal_noisecounter
+                       INPUT s0, RND_NUMBER
+                       AND s0, 01
+                       OUTPUT s0, PED_ACC_ENA                ; Random Noise ausgeben
+                       RETURN 
+                       ;
+   event_rst_pednoise: ; Reset Pedal Noise Counter
+                       LOAD s0, 00
+                       STORE s0, s_pedal_noisecounter
+ event_pedal_noiseoff: 
+                       LOAD s0, 01
+                       OUTPUT s0, PED_ACC_ENA                ; normal ON
+                       RETURN 
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+         event_dyn2s0: 
+                       COMPARE s0, c_dyn_threshold           ; Dynamikschwelle
+                       JUMP C, event_dyn2s0_0                ; JUMP wenn kleiner
+                       LOAD&RETURN s0, 03                    ; ist schnell
+                       ;
+       event_dyn2s0_0: 
+                       LOAD&RETURN s0, 01
+                       ;
+   event_dyn2s0_pedal: 
+                       LOAD&RETURN s0, 03                    ; ist ON
+                       ;
+                       ; ------------------------------------------------------------------------------
+                       ;
+    event_rd_step_all: 
+                       ; bereits von Scanned-RAM Dynamik umgerechnete 3 Bytes auf Adresse RAM_ADDR lesen
+                       LOAD s6_idx_ptr, c_page_latestep
+                       OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
+                       LOAD s0, s0                           ; Delay!
+                       INPUT s0, RD_PEDAL
+                       STORE s0, s_keystatus_pedal           ; 0 oder 1
+                       INPUT s0, RD_LOWER
+                       STORE s0, s_keystatus_lower
+                       INPUT s3_keystatus, RD_UPPER          ; wird ohnehin gleich gebraucht
+                       RETURN 
+                       ;
+   event_rd_early_all: 
+                       ; 3 Bytes s_keystatus_xxx auf Adresse RAM_ADDR lesen
+                       LOAD s6_idx_ptr, c_page_earlystep
+                       OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
+                       LOAD s0, s0                           ; Delay!
+                       INPUT s0, RD_PEDAL
+                       STORE s0, s_keystatus_pedal
+                       INPUT s0, RD_LOWER
+                       STORE s0, s_keystatus_lower
+                       INPUT s3_keystatus, RD_UPPER          ; wird ohnehin gleich gebraucht
+                       RETURN 
+                       ;
+   event_rd_vcont_all: 
+                       ; 3 Bytes s_vcont_xxx auf Adresse RAM_ADDR lesen
+                       LOAD s6_idx_ptr, c_page_vcontacts
+                       OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
+                       LOAD s0, s0                           ; Delay!
+                       ;INPUT s0, RD_PEDAL
+                       ;STORE s0, s_vcont_pedal                ; nicht benötigt
+                       INPUT s0, RD_LOWER
+                       STORE s0, s_vcont_lower
+                       INPUT s4_contacts, RD_UPPER           ; wird ohnehin gleich gebraucht
+                       RETURN 
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; +++++++++++ Wird mit allen s5_scan_key-Tastennummern aufgerufen ++++++++++++++++
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+       event_contacts: 
+                       OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer, hier überall gültig
+                       CALL event_rd_vcont_all               ; alte VCONTACT-Zustände in s_vcont_xxx, 3 Bytes
+                       CALL event_rd_step_all                ; ermittelten Step (Dynamik) aus Adresse s5_scan_key holen
+                       ; Umgerechneter Tastenzustand jetzt in s_keystatus_upper, s_keystatus_lower, s_keystatus_pedal
+                       JUMP event_contacts_0
+                       ;
+ event_contacts_early: 
+                       OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer, hier überall gültig
+                       CALL event_rd_vcont_all               ; alte VCONTACT-Zustände in s_vcont_xxx, 3 Bytes
+                       CALL event_rd_early_all               ; Early-Tastenzustand aus Adresse s5_scan_key holen
+     event_contacts_0: 
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; UPPER
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+                       LOAD s9_manual_select, 00             ; 0 = UPPER
+                       LOAD s0, s4_contacts
+                       OR s0, s3_keystatus
+                       CALL NZ, mpx_setkey                   ; nur wenn nicht beide 0 sind
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; LOWER
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+                       FETCH s3_keystatus, s_keystatus_lower
+                       FETCH s4_contacts, s_vcont_lower
+                       LOAD s9_manual_select, 01             ; 1 = LOWER
+                       LOAD s0, s4_contacts
+                       OR s0, s3_keystatus
+                       CALL NZ, mpx_setkey                   ; nur wenn nicht beide 0 sind
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; PEDAL
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+                       COMPARE s5_scan_key, c_maxbasskeys
+                       RETURN NC                             ; wenn s5_scan_key > c_maxbasskeys
+                       FETCH s3_keystatus, s_keystatus_pedal
+                       LOAD s9_manual_select, 02             ; 2 = PEDAL
+                       JUMP mpx_setkey_pedal                 ; und zurück
+                       ;
+                       ;
+                       ; ###############################################################################
+                       ;
+                       ;      #     # ######  #     #
+                       ;      ##   ## #     #  #   #
+                       ;      # # # # #     #   # #
+                       ;      #  #  # ######     #
+                       ;      #     # #         # #
+                       ;      #     # #        #   #
+                       ;      #     # #       #     #
+                       ;
+                       ; ###############################################################################
+                       ; für alle Manuale, muss wg. Noise-Timer-Update ständig aufgerufen werden
+                       ; ##############################################################################
+                       ;
+           mpx_setkey: 
+                       ; Offsets und Split auswerten, virtuelle Tastenkontakte setzen
+                       ; scan_addr ist jetzt innerhalb Generator-Bereich 0..60
+                       ; Letzten Kontakt-Zustand holen und merken. Wir verwenden diesen Wert
+                       ; auch gleich zum Ermitteln der tatsächlich eingeschalteten Tasten.
+                       ;
+                       COMPARE s4_contacts, 00               ; alter Zustand vom letzen Durchlauf
+                       JUMP Z, mpx_onoff
+                       ; s_keycount_* bei tatsächlich klingenden Noten erhöhen
+                       LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
+                       ADD s6_idx_ptr, s_keycount_upper      ; Basisadresse
+                       FETCH s0, (s6_idx_ptr)
+                       ADD s0, 01
+                       STORE s0, (s6_idx_ptr)
+                       ; scan_addr für Split merken, Taste is ON
+                       FETCH s0, s_scan_key_save
+                       STORE s0, s_lastkey_on
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; Zugriff auf die virtuellen Tastenkontakte
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+            mpx_onoff: 
+                       ; Sostenuto-Flag setzen, wenn SOSTENUTO aktiv und KEY ON
+                       COMPARE s3_keystatus, 00
+                       JUMP Z, mpx_off                       ; wenn aktueller Zustand OFF
+                       COMPARE s4_contacts, 0F
+                       RETURN Z                              ; ist bereits ganz an, nichts machen
+                       ; Tastenkontaktzustand hat sich auf ON geändert
+                       ; Flag setzen, wenn Sostenuto-Pedal NICHT aktiv ist und Taste gedrückt wird.
+                       ; Die dann gedrückten Tasten werden beim Ausschalten übersprungen, d.h. bleiben an
+                       LOAD s6_idx_ptr, s9_manual_select     ; Sostenuto-Pedal für dieses Manual?
+                       ADD s6_idx_ptr, s_sosten_upr
+                       FETCH s0, (s6_idx_ptr)
+                       XOR s0, FF                            ; invertieren
+                       AND s0, s3_keystatus
+                       ; s0 ist EIN, wenn Taste EIN und Sostenuto AUS
+                       CALL ramwrite_sostnflag_61
+                       ;
+                       COMPARE s3_keystatus, 01
+                       JUMP Z, mpx_slow                      ; nur 1. Kontakt, slow inc
+                       JUMP mpx_fast                         ; 1. und/oder 2. Kontakt
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+              mpx_off: 
+                       COMPARE s4_contacts, 00               ; vorheriger Zustand
+                       RETURN Z                              ; ist bereits ganz aus, nichts machen
+                       ; Tastenkontaktzustand hat sich auf OFF geändert
+                       LOAD s6_idx_ptr, s9_manual_select     ; Sostenuto-Pedal für dieses Manual?
+                       ADD s6_idx_ptr, s_sosten_upr
+                       FETCH s0, (s6_idx_ptr)
+                       COMPARE s0, 00
+                       JUMP Z, mpx_off_0                     ; Sostenuto ist aus
+                       CALL ramread_sostnflag_61
+                       COMPARE s0, 00
+                       ; die bei Sostenuto NICHT gedrückten Tasten beim Ausschalten überspringen
+                       RETURN NZ
+            mpx_off_0: 
+                       LOAD s6_idx_ptr, s9_manual_select     ; Sustain-Pedal für dieses Manual?
+                       ADD s6_idx_ptr, s_sustain_upr
+                       FETCH s0, (s6_idx_ptr)
+                       COMPARE s0, 00
+                       RETURN NZ                             ; nicht abschalten, Sustain ist aktiv
+                       CALL reset_noisetimer
+                       LOAD s0, s4_contacts                  ; vorheriger Zustand
+                       AND s0, 0F                            ; Noise wegmaskieren
+                       LOAD s1, s0                           ; Steady wird jetzt Noise
+                       SL0 s1                                ; altes Steady-Nibble in oberes Noise-Nibble verschieben
+                       SL0 s1
+                       SL0 s1
+                       SL0 s1
+                       AND s1, 70                            ; Noise ohne MSBit (RFU)
+                       SR0 s0                                ; Steady-Zustand halbieren, immer halber Pegel
+                       INPUT s2, SPI_CLICKLEN
+                       AND s2, 0F
+                       COMPARE s2, 05                        ; A < B -> C set, A >= B -> C cleared
+                       CALL C, mpx_clear_s1                  ; ist kleiner als 5, dann Noise sofort löschen
+                       ; Steady- (s0) und Noise-Anteil (s1) in mpx-RAM schreiben
+                       ; Tastennnummer in s5_scan_key
+                       ; in s9_manual_select ist aktuell abgefragtes Manual
+                       OR s0, s1
+                       JUMP ramwrite_vcont_61
+                       ;
+         mpx_clear_s1: 
+                       LOAD&RETURN s1, 00                    ; KeyOff-Noise löschen wenn ClickLen < 8
+                       ;
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; Differenzierter Key ON-Click
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+                       ; Verhalten Tastenkontakt-Bits nach Dekodierung ABC -> Kontakte aus obiger Tabelle
+                       ; noise_bb_bit  steady_bb_bit  level_full_bit  Resultat
+                       ; 0             0              0               OFF
+                       ; 1             0              0               HALF NOISE
+                       ; 0             1              0               HALF STEADY
+                       ; 1             1              0               HALF NOISE, HALF STEADY
+                       ; 0             0              1               OFF
+                       ; 1             0              1               FULL NOISE
+                       ; 0             1              1               FULL STEADY
+                       ; 1             1              1               FULL STEADY
+                       ;
+             mpx_fast: 
+                       ; Schneller Tastenanschlag, zweiter Kontakt geschlossen, voll gedrückt
+                       INPUT s0, SPI_CONFIG_1                ; Lubed Contacts?
+                       TEST s0, 02                           ; AND -> Z-Flag (Bit 1 gesetzt?)
+                       JUMP NZ, mpx_fast_lubed               ; Wenn Lubed Contacts Bit ON
+                       ;
+         mpx_fast_dry: 
+                       ; Dry Contact, harter Klick: Erst halfnoise, dann fullnoise, dann halfnoise_halfon, dann ON
+                       CALL start_noisetimer_fast            ; ggf. starten, falls noch in Ruhe; aktueller noisetimer in s0
+                       COMPARE s0, FF                        ; Klick beendet, d.h. Timer abgelaufen?
+                       JUMP Z, mpx_fullon
+                       FETCH s2, s_clicklen
+                       SR1 s2                                ; neg. Wert halbieren = Half-Click-Länge in s2
+                       ;SR1 s2                                 ; neg. Wert nochmals halbieren = Quarter-Click-Länge in s2
+                       COMPARE s0, s2                        ; Timer-Wert noch in s0, Quarter-Click-Länge in s2
+                       JUMP NC, mpx_halfnoise_halfon         ; JUMP wenn Timer-Wert in s0 > s2, Klick kurz vor Ende?
+                       ;FETCH s2, s_clicklen
+                       ;SR1 s2                                  ; neg. Wert halbieren = halbe Click-Länge jetzt in s2
+                       ;COMPARE s0, s2                          ; Timer-Wert noch in s0, Half-Click-Länge in s2
+                       ;JUMP NC, mpx_fullnoise                  ; JUMP wenn Timer-Wert in s0 > s2, Klick halb beendet?
+                       ;JUMP mpx_halfnoise
+                       JUMP mpx_fullnoise
+                       ;
+       mpx_fast_lubed: 
+                       ; Lubed Contact, weicherer Klick, wie mpx_slow, aber längere Zeit
+                       CALL start_noisetimer_fast            ; ggf. starten, falls noch in Ruhe; aktueller noisetimer in s0
+                       JUMP mpx_checkhalf
+                       ;
+             mpx_slow: 
+                       ; Langsamer Tastenanschlag oder nur erster Kontakt geschlossen
+                       CALL start_noisetimer_slow            ; ggf. starten, falls noch in Ruhe; aktueller noisetimer in s0
+        mpx_checkhalf: 
+                       COMPARE s0, FF                        ; Klick beendet, d.h. Timer abgelaufen?
+                       JUMP Z, mpx_fullon
+                       ; Wenn Hälfte der Klick-Länge erreicht, auf halfnoise_halfon umschalten
+                       FETCH s2, s_clicklen
+                       SR1 s2                                ; neg. Wert halbieren = halbe Click-Länge jetzt in s2
+                       COMPARE s0, s2                        ; Timer-Wert in s0, Half-Click-Länge in s2
+                       JUMP NC, mpx_halfnoise_halfon         ; JUMP wenn Timer-Wert in s0 > s2, Klick halb beendet?
+                       ; JUMP mpx_halfnoise
+        mpx_halfnoise: 
+                       LOAD s0, 70                           ; half level, steady_bb_bits OFF, all noise, noise_bb_bits ON
+                       JUMP ramwrite_vcont_61
+        mpx_fullnoise: 
+                       LOAD s0, 78                           ; full level, steady_bb_bits OFF, all noise, noise_bb_bits ON
+                       JUMP ramwrite_vcont_61
+           mpx_halfon: 
+                       LOAD s0, 07                           ; half level, steady_bb_bits ON
+                       JUMP ramwrite_vcont_61
+ mpx_halfnoise_halfon: 
+                       LOAD s0, 77                           ; half level, steady_bb_bits ON, half noise, noise_bb_bits ON
+                       JUMP ramwrite_vcont_61
+           mpx_fullon: 
+                       LOAD s0, 0F                           ; full level, steady_bb_bits ON,  no noise, noise_bb_bits OFF
+                       JUMP ramwrite_vcont_61
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+     mpx_setkey_pedal: 
+                       ; kleine Sonderbehandlung für Pedal, hat keine Dynamik und keine Noise-Bits:
+                       ; s3_keystatus enthält 0 (Taste aus) oder anderen Wert (Taste an),
+                       ; Falls sich neue Taste geändert hat, alte Taste löschen
+                       ; Vorher gespielte Pedaltaste löschen, Nummer der neue Pedaltaste merken
+                       ; s9_manual_select enthält 2
+                       ;
+                       COMPARE s3_keystatus, 00
+                       JUMP Z, mpx_setkey_pedal_0            ; Taste ist aus wenn 0
+                       LOAD s3_keystatus, 01                 ; nur zwei Zustände zulassen, hier ON
+                       FETCH s0, s_pedal_on                  ; Speicher für gedrückte Taste
+                       OR s0, s3_keystatus
+                       STORE s0, s_pedal_on                  ; kann innerhalb Pedalschleife '1' werden
+   mpx_setkey_pedal_0: 
+                       ; get_state/set_state hier nicht benötigt, weil kein Noise berücksichtigt wird
+                       LOAD s0, s3_keystatus
+                       JUMP ramwrite_vcont_61                ; Taste in s5_scan_key, Zustand in s0
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ; Werte in MPX/Scratch-RAM setzen mit aktuellem s9_manual_select und s5_scan_key
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+ ramread_sostnflag_61: 
+                       ; Sostenuto-Flag
+                       ; Taste in s5_scan_key, gelesene Daten später in s0
+                       LOAD s6_idx_ptr, c_page_sostenuto
+                       OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
+                       OUTPUT s5_scan_key, RAM_ADDR          ; Tastennummer in s0
+                       LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
+                       ADD s6_idx_ptr, RD_BASE
+                       INPUT s0, (s6_idx_ptr)                ; Upper, Lower oder Pedal Read
+                       RETURN                                ; Zustand in s0
+                       ;
+                       ; ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+                       ;
+ramwrite_sostnflag_61: 
+                       ; zu schreibende Daten in s0
+                       LOAD s6_idx_ptr, c_page_sostenuto
+                       OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
+                       JUMP ramwrite_61
+    ramwrite_vcont_61: 
+                       ; zu schreibende Daten in s0
+                       LOAD s6_idx_ptr, c_page_vcontacts
+                       OUTPUT s6_idx_ptr, RAM_PAGE           ; MPX-RAM Page
+          ramwrite_61: 
+                       ; zu schreibende Daten in s0, MPX-RAM Page muss gesetzt sein, 0..61
+                       OUTPUT s0, RAM_WRDATA
+                       OUTPUT s5_scan_key, RAM_ADDR
+                       LOAD s6_idx_ptr, s9_manual_select     ; 0 oder 1
+                       ADD s6_idx_ptr, WR_BASE
+                       OUTPUT s0, (s6_idx_ptr)               ; Upper, Lower oder Pedal Strobe
+                       RETURN 
