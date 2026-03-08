@@ -109,10 +109,10 @@
                       CONSTANT SWITCHPORT, 28              ; Switches Port gesamt WRITE
                       CONSTANT SWITCHPORT_DDR, 29          ; Switches Port Data Direction
                       ; Output ports
-                      CONSTANT WR_BASE, 20                 ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
-                      CONSTANT WR_UPPER, 20         ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
-                      CONSTANT WR_LOWER, 21         ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Lower (1 Byte)
-                      CONSTANT WR_PEDAL, 22         ; Schreibzugriff erzeugt Write für Pedal-Bits (2 Bits)
+                      CONSTANT WR_BASE, 20                 ; Schreibzugriff indirekt
+                      CONSTANT WR_UPPER, 20                ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Upper (1 Byte)
+                      CONSTANT WR_LOWER, 21                ; Schreibzugriff erzeugt Write für Busbar- und Noise-Enables Lower (1 Byte)
+                      CONSTANT WR_PEDAL, 22                ; Schreibzugriff erzeugt Write für Pedal-Bits (2 Bits)
                       CONSTANT MIDI_CMD, 30                ; MIDI-Befehl
                       CONSTANT MIDI_DB1, 31
                       CONSTANT MIDI_DB2, 32
@@ -153,7 +153,7 @@
                       ;
                       CONSTANT FEATURE_SPI_FLAG, 30        ; war "0000000" & spiflag, jetzt "0000001" & spiflag wenn neues FPGA
                       CONSTANT TX_STATUS, 31               ; Bit 0 = TX DIN (1) voll, Bit 1 = TX SAM (2) voll
-                      CONSTANT RD_BASE, 34               ; für indirektes Lesen
+                      CONSTANT RD_BASE, 34                 ; für indirektes Lesen
                       CONSTANT RD_UPPER, 34                ; Upper-Byte vom MPX-RAM
                       CONSTANT RD_LOWER, 35                ; Lower-Byte vom MPX-RAM
                       CONSTANT RD_PEDAL, 36                ; Pedal-Bits vom MPX-RAM (1:0)
