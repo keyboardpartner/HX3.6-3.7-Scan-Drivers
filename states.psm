@@ -48,9 +48,11 @@
                        ; Nur 1. Kontakt erreicht: Solange Taste in Bewegung ist, Timerwert verringern
                        CALL local_rd_dyntimer_s0          ; gelesener Dyntimer-Wert in s0, Startwert 0, zählt bis 1 herunter
                        COMPARE s0, 01
-                       CALL NZ, local_sub_s0              ; -1 wenn nicht Endstand 1 erreicht
-                       STORE s0, s_last_keytime           ; neuer Raw-Wert Dynamik
+                       JUMP Z, local_forward_limit        ; -1 wenn nicht Endstand 1 erreicht
+                       SUB s0, 01
                        CALL local_wr_dyntimer_s0          ; Timer mit s0 neu setzen
+  local_forward_limit: 
+                       STORE s0, s_last_keytime           ; neuer Raw-Wert Dynamik
                        ;
                        COMPARE s3_keystatus, c_key_moving ; nur 1. Kontakt?
                        RETURN Z                           ; bleibt in Forward, bis 2. Kontakt erreicht oder alle Kontakte verlassen
@@ -60,10 +62,6 @@
                        LOAD s2, c_state_stopped
                        CALL local_wr_state_s2             ; neuer Timer-State: c_state_stopped
                        JUMP local_states_on               ; Dynamik-Wert eintragen, MIDI ON senden und Ende
-                       ;
-         local_sub_s0: 
-                       SUB s0, 01
-                       RETURN 
                        ;
                        ; ------------------------------ State "Stopped" -------------------------------
                        ;
