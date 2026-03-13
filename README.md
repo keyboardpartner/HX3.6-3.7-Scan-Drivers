@@ -4,7 +4,7 @@
 
 ### Scan drivers for PicoBlaze Core in HX3.6/3.7 Sound Engine (FPGA)
 
-**Customer info:** Do not open! No user servicable parts inside. For HX3 updates, see our **[HX3 Update page](http://updates.keyboardpartner.de/Files/index.php)**.
+**Customer info:** Do not open! No user serviceable parts inside. For HX3 updates, visit our **[HX3 Update page](http://updates.keyboardpartner.de/Files/index.php)**. The files and information available here are intended solely for developers.
 
 These are various scan driver sources for HX3.6 and HX3.7 mainboards, to be compiled with PicoBlaze Assembler KCPSM6 from Ken Chapman. All drivers for velocity-sensitive keybeds (Fatar, Pulse, XB2/XB5) now come with an improved dynamic scaling using a dedicated time-to-velocity table. This table is created by the main MCU and automatically uploaded to the FPGA sound engine. Due to new velocity table, these drivers are **no longer compatible** with HX3.5 boards (table RAM does not fit in older FPGA).
 
