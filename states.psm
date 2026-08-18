@@ -184,6 +184,7 @@ local_wr_s3_keystat_0:
                        OUTPUT s0, DYN_TABLE_ADDR          ; Adresse für Dyntable schreiben
                        LOAD s0, s0                        ; Delay für BRAM Zugriff
                        INPUT s0, DYN_TABLE                ; Dyntable-Wert in s0, 127 = schnellste Taste, 10 = langsamste Taste
+                       ; LOAD s0, 40                      ; TEST ohne Dynamik-Tabelle
                        STORE s0, s_local_dyn
                        JUMP local_states_out
                        ;

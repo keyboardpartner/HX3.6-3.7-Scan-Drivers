@@ -56,7 +56,7 @@
                       ; $60=SR4014, $61=Fatar, $62=Opto, $63=MIDI, $64=OrganScan61, $65=XB2-5, $66=Fatar61 (neu), $67=Fatar73 (neu, mit Presets)
                       CONSTANT c_corevers, 60
                       CONSTANT c_corevers_midionly, 63     ; zum Vergleichen im MIDI-Scan-Treiber für MIDI-IN-Split
-                      CONSTANT c_corerevi, 53              ; Revisionsnummer
+                      CONSTANT c_corerevi, 54              ; Revisionsnummer
                       CONSTANT c_dyn_threshold, 40         ; MIDI-Dynamikschwelle für full click
                       CONSTANT c_midi_mindyn, 10           ; MIDI-Minimaldynamik langsame Taste
                       CONSTANT c_time_offset, 06           ; Offset, wird von gemessener Velocity-Zeit abgezogen
@@ -385,7 +385,7 @@ local_was_idle_pedal: ; war vorher OFF
                       LOAD s0, 00                          ; CLK auf 0
                       OUTPUT s0, AUXPIO1
                       ;
-                      COMPARE s5_scan_key, c_maxkeys
+                      COMPARE s5_scan_key, c_maxkeys_plus1
                       JUMP NZ, local_scanloop
                       RETURN                               ; kein Pedal abfragen!
                       ;
